@@ -14,6 +14,7 @@ import {
   createTrainingEventSource,
   fetchAllRuns,
   fetchGGUFModels,
+  getBackendLog,
   getCheckpoints,
   getLossHistory,
   getRunningProcesses,
@@ -112,6 +113,10 @@ export function TrainingMonitor() {
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now())
   const [sseConnected, setSseConnected] = useState(false)
   const [secondsAgo, setSecondsAgo] = useState(0)
+
+  // Log tab state
+  const [logTab, setLogTab] = useState<'training' | 'backend'>('training')
+  const [backendLogLines, setBackendLogLines] = useState<string[]>([])
 
   // Training controls state
   const [trainingEpochs, setTrainingEpochs] = useState(3)
@@ -300,6 +305,15 @@ export function TrainingMonitor() {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logLines])
 
+  // Poll backend log every 5s when the backend tab is active
+  useEffect(() => {
+    if (logTab !== 'backend') return
+    const load = () => getBackendLog(50).then(d => setBackendLogLines(d.lines)).catch(() => {})
+    void load()
+    const id = setInterval(load, 5000)
+    return () => clearInterval(id)
+  }, [logTab])
+
   // Chart data: last 500 train points + all eval points
   const chartData = useMemo(() => {
     const evalSteps = new Set(lossHistory.filter(p => p.eval_loss !== null).map(p => p.step))
@@ -313,6 +327,13 @@ export function TrainingMonitor() {
         eval_loss: p.eval_loss,
       }))
   }, [lossHistory])
+
+  function logLineClass(line: string): string {
+    if (/\] ERROR\s/.test(line) || /\] CRITICAL\s/.test(line)) return 'text-red-400'
+    if (/\] WARNING\s/.test(line)) return 'text-yellow-400'
+    if (/\] DEBUG\s/.test(line)) return 'text-zinc-600'
+    return 'text-zinc-400'
+  }
 
   const { copied, copy } = useCopyToClipboard()
 
@@ -747,23 +768,46 @@ export function TrainingMonitor() {
           )}
         </div>
 
-        {/* 5. Live Log Feed */}
+        {/* 5. Log Feed */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-          <h3 className="text-sm font-medium text-zinc-400 mb-3">Live Log</h3>
+          <div className="flex items-center gap-2 mb-3">
+            {(['training', 'backend'] as const).map(t => (
+              <button key={t}
+                onClick={() => setLogTab(t)}
+                className={`text-xs px-2 py-0.5 rounded ${logTab === t ? 'bg-zinc-700 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                {t === 'training' ? 'Training Log' : 'Backend Log'}
+              </button>
+            ))}
+          </div>
           <div
             className="h-48 overflow-y-auto rounded-lg p-3 font-mono text-xs leading-relaxed"
             style={{ background: '#0d0d0d' }}
           >
-            {logLines.length === 0 ? (
-              <div className="text-zinc-600">
-                No log file yet. Use Training Controls above to start a training job.
-              </div>
-            ) : (
-              logLines.map((line, i) => (
-                <div key={i} className="text-zinc-400 whitespace-pre-wrap break-all">
-                  {line}
+            {logTab === 'training' ? (
+              logLines.length === 0 ? (
+                <div className="text-zinc-600">
+                  No log file yet. Use Training Controls above to start a training job.
                 </div>
-              ))
+              ) : (
+                logLines.map((line, i) => (
+                  <div key={i} className="text-zinc-400 whitespace-pre-wrap break-all">
+                    {line}
+                  </div>
+                ))
+              )
+            ) : (
+              backendLogLines.length === 0 ? (
+                <div className="text-zinc-600">
+                  No backend log yet. Start the backend to generate log output.
+                </div>
+              ) : (
+                backendLogLines.map((line, i) => (
+                  <div key={i} className={`whitespace-pre-wrap break-all ${logLineClass(line)}`}>
+                    {line}
+                  </div>
+                ))
+              )
             )}
             <div ref={logEndRef} />
           </div>

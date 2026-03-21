@@ -42,10 +42,18 @@ else:
     _DATA_DIR = Path(__file__).parent  # dev: beside run.py
 
 # Import AFTER HIME_DATA_DIR is set so pydantic-settings reads the right .env
+from app.logger import setup_logging  # noqa: E402
+
+_LOG_DIR = _DATA_DIR / "logs"
+setup_logging(_LOG_DIR, dev=not bool(_args.data_dir))
+
+import logging as _logging  # noqa: E402
 import uvicorn  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.utils.ports import find_free_port  # noqa: E402
+
+_log = _logging.getLogger("hime")
 
 _RUNTIME_PORT_FILE = _DATA_DIR / ".runtime_port"
 
@@ -61,14 +69,22 @@ def _clear_runtime_port() -> None:
 
 
 if __name__ == "__main__":
+    from app.main import app as _app  # noqa: E402 — needed for version
+
     port = find_free_port(start=settings.port)
 
-    if port != settings.port:
-        print(f"[hime] Port {settings.port} is busy - using {port} instead.", flush=True)
-
     _write_runtime_port(port)
-    print(f"[hime] Backend running on http://{_HOST}:{port}", flush=True)
-    print(f"[hime] runtime_port -> {_RUNTIME_PORT_FILE}", flush=True)
+
+    _log.info("Hime Backend v%s starting...", _app.version)
+    _log.info("  Data dir    : %s", _DATA_DIR)
+    _log.info("  Models path : %s", settings.models_base_path)
+    _log.info("  LoRA path   : %s", settings.lora_path)
+    _log.info("  Watch folder: (from DB setting)")
+    _log.info("  Log file    : %s", _LOG_DIR / "hime-backend.log")
+    if port != settings.port:
+        _log.warning("Port %s busy — using %s instead", settings.port, port)
+    _log.info("Listening on http://%s:%s", _HOST, port)
+    _log.debug("runtime_port -> %s", _RUNTIME_PORT_FILE)
 
     try:
         uvicorn.run(

@@ -169,3 +169,9 @@ export async function getAvailableCheckpoints(modelName: string): Promise<string
   const data = await res.json() as { checkpoints: string[] }
   return data.checkpoints
 }
+
+export async function getBackendLog(lines = 50): Promise<{ lines: string[] }> {
+  const res = await apiFetch(`/api/v1/training/backend-log?lines=${lines}`)
+  if (!res.ok) throw new Error(`Failed to load backend log: ${res.status}`)
+  return res.json() as Promise<{ lines: string[] }>
+}

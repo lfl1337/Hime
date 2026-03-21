@@ -33,6 +33,11 @@ class Settings(BaseSettings):
         if _HIME_DATA_DIR
         else "logs/audit.log"
     )
+    backend_log_path: str = (
+        str(Path(_HIME_DATA_DIR) / "logs" / "hime-backend.log")
+        if _HIME_DATA_DIR
+        else "logs/hime-backend.log"
+    )
     rate_limit_per_minute: int = 60
 
     # Training / fine-tuning paths (override via .env if needed)

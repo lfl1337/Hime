@@ -3,6 +3,9 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 use tauri::{path::BaseDirectory, Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
+
+// ShellExt trait is only needed in release (sidecar) mode.
+#[cfg(not(debug_assertions))]
 use tauri_plugin_shell::ShellExt;
 
 // Shared log file handle — written by the sidecar stream task.
@@ -47,59 +50,78 @@ pub fn run() {
 
             log_line(&log, &format!("[hime] === startup === data_dir={data_dir_str}"));
 
-            // ── Spawn the sidecar ─────────────────────────────────────────
-            let spawn_result = app
-                .shell()
-                .sidecar("hime-backend")
-                .map(|cmd| cmd.args(["--data-dir", &data_dir_str]))
-                .and_then(|cmd| cmd.spawn());
+            // ── RELEASE: spawn sidecar; DEV: connect to already-running backend
+            #[cfg(not(debug_assertions))]
+            {
+                let spawn_result = app
+                    .shell()
+                    .sidecar("hime-backend")
+                    .map(|cmd| cmd.args(["--data-dir", &data_dir_str]))
+                    .and_then(|cmd| cmd.spawn());
 
-            let (mut rx, child) = match spawn_result {
-                Ok(pair) => pair,
-                Err(e) => {
-                    let msg = format!(
-                        "Hime backend could not be started.\n\nError: {e}\n\nLog file:\n{log_path_str}"
-                    );
-                    log_line(&log, &format!("[hime] SPAWN ERROR: {e}"));
-                    app.dialog()
-                        .message(&msg)
-                        .title("Hime — Startup Error")
-                        .blocking_show();
-                    return Err(e.into());
-                }
-            };
-
-            // Store child handle so on_window_event can kill it on close.
-            app.manage(Mutex::new(Some(child)));
-
-            // ── Stream sidecar stdout/stderr → log file ────────────────────
-            let log_for_stream = Arc::clone(&log);
-            tauri::async_runtime::spawn(async move {
-                use tauri_plugin_shell::process::CommandEvent;
-                while let Some(event) = rx.recv().await {
-                    let line = match &event {
-                        CommandEvent::Stdout(b) => {
-                            format!("[OUT] {}", String::from_utf8_lossy(b).trim_end())
-                        }
-                        CommandEvent::Stderr(b) => {
-                            format!("[ERR] {}", String::from_utf8_lossy(b).trim_end())
-                        }
-                        CommandEvent::Terminated(s) => format!("[EXIT] {s:?}"),
-                        _ => continue,
-                    };
-                    eprintln!("{line}");
-                    log_line(&log_for_stream, &line);
-                    if matches!(event, CommandEvent::Terminated(_)) {
-                        break;
+                let (mut rx, child) = match spawn_result {
+                    Ok(pair) => pair,
+                    Err(e) => {
+                        let msg = format!(
+                            "Hime backend could not be started.\n\nError: {e}\n\nLog file:\n{log_path_str}"
+                        );
+                        log_line(&log, &format!("[hime] SPAWN ERROR: {e}"));
+                        app.dialog()
+                            .message(&msg)
+                            .title("Hime — Startup Error")
+                            .blocking_show();
+                        return Err(e.into());
                     }
-                }
-            });
+                };
+
+                // Store child handle so on_window_event can kill it on close.
+                app.manage(Mutex::new(Some(child)));
+
+                // Stream sidecar stdout/stderr → log file
+                let log_for_stream = Arc::clone(&log);
+                tauri::async_runtime::spawn(async move {
+                    use tauri_plugin_shell::process::CommandEvent;
+                    while let Some(event) = rx.recv().await {
+                        let line = match &event {
+                            CommandEvent::Stdout(b) => {
+                                format!("[OUT] {}", String::from_utf8_lossy(b).trim_end())
+                            }
+                            CommandEvent::Stderr(b) => {
+                                format!("[ERR] {}", String::from_utf8_lossy(b).trim_end())
+                            }
+                            CommandEvent::Terminated(s) => format!("[EXIT] {s:?}"),
+                            _ => continue,
+                        };
+                        eprintln!("{line}");
+                        log_line(&log_for_stream, &line);
+                        if matches!(event, CommandEvent::Terminated(_)) {
+                            break;
+                        }
+                    }
+                });
+            }
+
+            // Dev: no sidecar — register None so on_window_event try_state still works.
+            #[cfg(debug_assertions)]
+            {
+                type Child = tauri_plugin_shell::process::CommandChild;
+                app.manage(Mutex::new(None::<Child>));
+                log_line(&log, "[hime] dev mode — sidecar skipped, connecting to external backend");
+            }
 
             // ── Health check: wait up to 10 s for .runtime_port to appear ──
-            // The backend writes .runtime_port as its first action, so its
-            // presence means Python initialised successfully.
+            // Release: backend writes the file to AppData.
+            // Dev: backend writes it to app/backend/ in the source tree.
             let app_handle = app.handle().clone();
+
+            #[cfg(not(debug_assertions))]
             let runtime_port_path = app_data_dir.join(".runtime_port");
+
+            #[cfg(debug_assertions)]
+            let runtime_port_path = std::path::PathBuf::from(
+                r"C:\Projekte\Hime\app\backend\.runtime_port",
+            );
+
             let log_path_for_check = log_path_str.clone();
 
             std::thread::spawn(move || {
@@ -114,7 +136,6 @@ pub fn run() {
                     }
                 }
                 if healthy {
-                    // Signal the frontend — avoids a CORS fetch from the webview.
                     let _ = app_handle.emit("backend-ready", ());
                 } else {
                     app_handle
@@ -137,8 +158,10 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(3600)); // 1 h
                     let hours = start.elapsed().as_secs() / 3600;
                     if hours >= 12 {
-                        log_line(&log_for_idle,
-                            "[hime] WARNING: App has been running for 12+ hours. Consider restarting to free memory.");
+                        log_line(
+                            &log_for_idle,
+                            "[hime] WARNING: App has been running for 12+ hours. Consider restarting to free memory.",
+                        );
                         break;
                     }
                 }

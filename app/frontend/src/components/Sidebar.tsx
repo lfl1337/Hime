@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useStore } from '@/store'
 import { StatusBadge } from './StatusBadge'
+import { getRunningProcesses } from '../api/training'
 
 interface NavItem {
   to: string
@@ -19,6 +20,17 @@ const NAV_ITEMS: NavItem[] = [
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const backendOnline = useStore((s) => s.backendOnline)
+  const [trainingRun, setTrainingRun] = useState<string | null>(null)
+
+  useEffect(() => {
+    const check = () =>
+      getRunningProcesses()
+        .then(procs => setTrainingRun(procs[0]?.model_name ?? null))
+        .catch(() => {})
+    void check()
+    const id = setInterval(check, 10_000)
+    return () => clearInterval(id)
+  }, [])
 
   return (
     <aside
@@ -55,8 +67,22 @@ export function Sidebar() {
               }`
             }
           >
-            <span className="text-lg w-6 text-center flex-shrink-0">{item.icon}</span>
-            {!collapsed && <span>{item.label}</span>}
+            <span className="text-lg w-6 text-center flex-shrink-0 relative">
+              {item.icon}
+              {item.to === '/monitor' && trainingRun && (
+                <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+              )}
+            </span>
+            {!collapsed && (
+              <span className="flex items-center gap-1.5">
+                {item.label}
+                {item.to === '/monitor' && trainingRun && (
+                  <span className="text-green-400 text-xs font-mono truncate max-w-[80px]" title={trainingRun}>
+                    ●
+                  </span>
+                )}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -73,7 +99,7 @@ export function Sidebar() {
           <div className="flex flex-col gap-1">
             <span className="text-xs text-zinc-600">Backend</span>
             <StatusBadge online={backendOnline} />
-            <p className="mt-1 text-xs text-zinc-600">Hime v0.5.0</p>
+            <p className="mt-1 text-xs text-zinc-600">Hime v0.5.1</p>
           </div>
         )}
       </div>

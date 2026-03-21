@@ -1,6 +1,6 @@
 {
   "productName": "Hime",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "identifier": "dev.hime.app",
   "build": {
     "beforeDevCommand": "npm run vite",

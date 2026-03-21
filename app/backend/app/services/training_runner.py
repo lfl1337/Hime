@@ -1,10 +1,7 @@
 """Start/stop LoRA training jobs from the app UI."""
 import json
 import logging
-import os
-import signal
 import subprocess
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -45,11 +42,11 @@ def _ensure_log_dir() -> None:
     Path(settings.training_log_path).mkdir(parents=True, exist_ok=True)
 
 
-def _is_alive(pid: int) -> bool:
+def _is_process_alive(pid: int) -> bool:
     try:
         proc = psutil.Process(pid)
-        return proc.status() != psutil.STATUS_ZOMBIE
-    except psutil.NoSuchProcess:
+        return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
         return False
 
 
@@ -64,8 +61,11 @@ def start_training(
     pid_path = _pid_file(model_name)
     if pid_path.exists():
         data = json.loads(pid_path.read_text())
-        if _is_alive(data["pid"]):
+        if _is_process_alive(data["pid"]):
             raise RuntimeError(f"Training already running for {model_name} (PID {data['pid']})")
+        # Stale PID file — clean it up and allow fresh start
+        _log.warning("Stale PID file found for %s — removing before start", model_name)
+        pid_path.unlink(missing_ok=True)
 
     script = Path(settings.scripts_path) / "train_hime.py"
     if not script.exists():
@@ -108,30 +108,61 @@ def stop_training(model_name: str) -> dict:
     _ensure_log_dir()
     pid_path = _pid_file(model_name)
     if not pid_path.exists():
-        raise FileNotFoundError(f"No running training process for {model_name}")
+        raise FileNotFoundError(f"No training process found for {model_name}")
 
     data = json.loads(pid_path.read_text())
     pid = data["pid"]
     _log.info("Stopping training for %s (pid=%d)", model_name, pid)
     graceful = False
 
-    if _is_alive(pid):
-        # Send CTRL_BREAK — triggers HuggingFace Trainer to save checkpoint
+    # Step 1: psutil tree kill (most reliable — kills CUDA workers too)
+    try:
+        parent = psutil.Process(pid)
+        children = parent.children(recursive=True)
+        for child in children:
+            try:
+                _log.info("Killing child process %d (%s)", child.pid, child.name())
+                child.kill()
+            except psutil.NoSuchProcess:
+                pass
+        parent.kill()
+        gone, alive = psutil.wait_procs([parent] + children, timeout=5)
+        if not alive:
+            graceful = True
+        else:
+            _log.warning("%d processes still alive after psutil kill", len(alive))
+    except psutil.NoSuchProcess:
+        _log.info("Process %d already dead", pid)
+        graceful = True
+    except Exception as e:
+        _log.error("psutil kill failed: %s — falling back to taskkill", e)
+
+    # Step 2: taskkill /F /T fallback (kills entire process tree on Windows)
+    if not graceful or _is_process_alive(pid):
         try:
-            os.kill(pid, signal.CTRL_BREAK_EVENT)
-            for _ in range(30):
-                time.sleep(1)
-                if not _is_alive(pid):
-                    graceful = True
-                    break
-        except OSError:
-            pass
+            result = subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True, text=True, timeout=10,
+            )
+            _log.info("taskkill: %s", result.stdout.strip() or result.stderr.strip())
+        except Exception as e:
+            _log.error("taskkill failed: %s", e)
 
-        if not graceful and _is_alive(pid):
-            subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
-
+    # Step 3: Always clean up PID file
     pid_path.unlink(missing_ok=True)
-    return {"stopped": True, "graceful": graceful}
+    _log.info("Deleted PID file for %s", model_name)
+
+    # Step 4: Best-effort CUDA cache clear (non-blocking)
+    try:
+        subprocess.run(
+            ["python", "-c", "import torch; torch.cuda.empty_cache()"],
+            timeout=10, capture_output=True,
+        )
+        _log.info("CUDA cache cleared")
+    except Exception as e:
+        _log.debug("CUDA cache clear skipped: %s", e)
+
+    return {"stopped": True, "graceful": graceful, "model_name": model_name}
 
 
 def get_running_processes() -> list[TrainingProcess]:
@@ -143,12 +174,18 @@ def get_running_processes() -> list[TrainingProcess]:
         try:
             data = json.loads(pid_file.read_text())
             model_name = pid_file.stem.removesuffix(".pid")
-            if _is_alive(data["pid"]):
-                processes.append(TrainingProcess(model_name=model_name, **data))
-            else:
-                pid_file.unlink(missing_ok=True)  # clean up dead PID files
-        except Exception:
-            pass
+            pid = data["pid"]
+            if not _is_process_alive(pid):
+                _log.warning(
+                    "Stale PID file for %s (pid=%d) — process is dead, cleaning up",
+                    model_name, pid,
+                )
+                pid_file.unlink(missing_ok=True)
+                continue
+            processes.append(TrainingProcess(model_name=model_name, **data))
+        except Exception as e:
+            _log.error("Error reading PID file %s: %s — deleting", pid_file, e)
+            pid_file.unlink(missing_ok=True)
     return processes
 
 

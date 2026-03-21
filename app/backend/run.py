@@ -18,6 +18,7 @@ Port selection:
 """
 import argparse
 import os
+import sys
 from pathlib import Path
 
 _parser = argparse.ArgumentParser(add_help=False)
@@ -25,7 +26,16 @@ _parser.add_argument("--data-dir", default=None)
 _args, _ = _parser.parse_known_args()
 
 if _args.data_dir:
+    # Tauri sidecar mode: use the directory Tauri chose (%APPDATA%\dev.hime.app)
     _DATA_DIR = Path(_args.data_dir)
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    os.environ["HIME_DATA_DIR"] = str(_DATA_DIR)
+elif getattr(sys, "frozen", False):
+    # Frozen PyInstaller exe run without --data-dir (e.g. manual testing).
+    # Fall back to the same AppData path Tauri would pass so .runtime_port
+    # ends up somewhere the frontend can find it, not in the temp extract dir.
+    _appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+    _DATA_DIR = _appdata / "dev.hime.app"
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     os.environ["HIME_DATA_DIR"] = str(_DATA_DIR)
 else:
@@ -53,11 +63,11 @@ if __name__ == "__main__":
     port = find_free_port(start=settings.port)
 
     if port != settings.port:
-        print(f"[hime] Port {settings.port} is busy — using {port} instead.", flush=True)
+        print(f"[hime] Port {settings.port} is busy - using {port} instead.", flush=True)
 
     _write_runtime_port(port)
     print(f"[hime] Backend running on http://{_HOST}:{port}", flush=True)
-    print(f"[hime] runtime_port → {_RUNTIME_PORT_FILE}", flush=True)
+    print(f"[hime] runtime_port -> {_RUNTIME_PORT_FILE}", flush=True)
 
     try:
         uvicorn.run(

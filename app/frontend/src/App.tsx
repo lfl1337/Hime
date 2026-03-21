@@ -69,19 +69,26 @@ export default function App() {
   useEffect(() => {
     if (import.meta.env.DEV) return
 
-    let attempts = 0
-    const id = window.setInterval(async () => {
-      attempts++
-      if (await checkBackendOnline()) {
-        clearInterval(id)
+    // Production: trust the Tauri "backend-ready" event emitted by lib.rs
+    // once .runtime_port appears — avoids a CORS fetch from the webview.
+    let unlistenFn: (() => void) | null = null
+    const timeoutId = window.setTimeout(() => {
+      setStartupError('Backend failed to start. Please restart the app.')
+    }, 15_000)
+
+    void import('@tauri-apps/api/event').then(({ listen }) => {
+      void listen<void>('backend-ready', () => {
+        clearTimeout(timeoutId)
         setBackendReady(true)
-      } else if (attempts >= 20) {
-        // 20 × 500 ms = 10 s timeout
-        clearInterval(id)
-        setStartupError('Backend failed to start. Please restart the app.')
-      }
-    }, 500)
-    return () => clearInterval(id)
+      }).then((unlisten) => {
+        unlistenFn = unlisten
+      })
+    })
+
+    return () => {
+      clearTimeout(timeoutId)
+      unlistenFn?.()
+    }
   }, [])
 
   if (!backendReady) {

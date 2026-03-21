@@ -19,10 +19,9 @@ function readBackendPort(): number {
       return port
     }
     console.error(`[vite] .runtime_port is not a number: "${content.trim()}"`)
-  } catch (e) {
-    console.error(`[vite] Could not read ${filePath}:`, e)
+  } catch {
+    // .runtime_port absent during production build — fallback is correct
   }
-  console.warn('[vite] Falling back to port 8004')
   return 8004
 }
 

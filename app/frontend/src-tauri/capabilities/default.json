@@ -16,10 +16,6 @@
       ]
     },
     "shell:allow-execute",
-    "shell:allow-spawn",
-    {
-      "identifier": "shell:scope",
-      "allow": [{ "name": "hime-backend", "sidecar": true }]
-    }
+    "shell:allow-spawn"
   ]
 }

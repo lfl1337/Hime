@@ -32,29 +32,66 @@ subprocess.run(
         "--distpath", str(OUT),
         "--workpath", str(APP / "build" / "pyinstaller"),
         "--specpath",  str(APP / "build"),
+
+        # Add the backend directory to sys.path so 'app.*' imports resolve
+        "--paths", str(BACKEND),
+
+        # Bundle the entire app/ package as data so uvicorn string-import
+        # ("app.main:app") can find it at runtime
+        "--add-data", f"{BACKEND / 'app'};app",
+
+        # app package — all modules must be explicit hidden imports because
+        # uvicorn loads "app.main:app" as a string, invisible to PyInstaller
+        "--hidden-import", "app",
+        "--hidden-import", "app.main",
+        "--hidden-import", "app.config",
+        "--hidden-import", "app.auth",
+        "--hidden-import", "app.database",
+        "--hidden-import", "app.models",
+        "--hidden-import", "app.schemas",
+        "--hidden-import", "app.inference",
+        "--hidden-import", "app.middleware",
+        "--hidden-import", "app.middleware.audit",
+        "--hidden-import", "app.middleware.rate_limit",
+        "--hidden-import", "app.utils",
+        "--hidden-import", "app.utils.ports",
+        "--hidden-import", "app.utils.sanitize",
+        "--hidden-import", "app.routers",
+        "--hidden-import", "app.routers.texts",
+        "--hidden-import", "app.routers.translations",
+        "--hidden-import", "app.routers.training",
+        "--hidden-import", "app.pipeline",
+        "--hidden-import", "app.pipeline.runner",
+        "--hidden-import", "app.pipeline.prompts",
+        "--hidden-import", "app.services",
+        "--hidden-import", "app.services.training_monitor",
+        "--hidden-import", "app.websocket",
+        "--hidden-import", "app.websocket.streaming",
+        # collect-all picks up any remaining submodules not listed above
+        "--collect-all", "app",
+
         # uvicorn internal imports not auto-detected by PyInstaller
         "--hidden-import", "uvicorn.logging",
         "--hidden-import", "uvicorn.loops.auto",
         "--hidden-import", "uvicorn.lifespan.on",
         "--hidden-import", "uvicorn.protocols.http.auto",
         "--hidden-import", "uvicorn.protocols.websockets.auto",
+
         # async SQLite driver
         "--hidden-import", "aiosqlite",
+
         # multipart / form parsing
         "--hidden-import", "multipart",
         "--hidden-import", "email.mime.multipart",
-        # app routers (dynamic imports not seen by static analysis)
-        "--hidden-import", "app.routers.texts",
-        "--hidden-import", "app.routers.translations",
-        "--hidden-import", "app.routers.training",
-        "--hidden-import", "app.websocket.streaming",
+
         # pydantic needs full collection due to v2 internals
         "--collect-all", "pydantic",
         "--collect-all", "pydantic_settings",
+
         str(BACKEND / "run.py"),
     ],
     check=True,
     cwd=str(BACKEND),
 )
 
-print(f"\n[build] Binary → {OUT / (BINARY_NAME + '.exe')}")
+print(f"\n[build] Binary -> {OUT / (BINARY_NAME + '.exe')}")

@@ -38,6 +38,10 @@ def _log_file(model_name: str) -> str:
     return str(Path(settings.training_log_path) / f"{model_name}.log")
 
 
+def _ensure_log_dir() -> None:
+    Path(settings.training_log_path).mkdir(parents=True, exist_ok=True)
+
+
 def _is_alive(pid: int) -> bool:
     try:
         proc = psutil.Process(pid)
@@ -52,6 +56,7 @@ def start_training(
     epochs: int = 3,
     conda_env: str = "hime",
 ) -> TrainingProcess:
+    _ensure_log_dir()
     pid_path = _pid_file(model_name)
     if pid_path.exists():
         data = json.loads(pid_path.read_text())
@@ -96,6 +101,7 @@ def start_training(
 
 
 def stop_training(model_name: str) -> dict:
+    _ensure_log_dir()
     pid_path = _pid_file(model_name)
     if not pid_path.exists():
         raise FileNotFoundError(f"No running training process for {model_name}")
@@ -124,6 +130,7 @@ def stop_training(model_name: str) -> dict:
 
 
 def get_running_processes() -> list[TrainingProcess]:
+    _ensure_log_dir()
     log_dir = Path(settings.training_log_path)
     processes = []
     for pid_file in log_dir.glob("*.pid.json"):

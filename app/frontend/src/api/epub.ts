@@ -78,6 +78,12 @@ export async function exportChapter(chapterId: number, format: 'txt' = 'txt'): P
   return data.content
 }
 
+export async function rescanBookChapters(bookId: number): Promise<BookSummary> {
+  const res = await apiFetch(`/api/v1/epub/books/${bookId}/rescan`, { method: 'POST' })
+  if (!res.ok) throw new Error(`Rescan failed: ${res.status}`)
+  return res.json() as Promise<BookSummary>
+}
+
 export async function getEpubSettings(): Promise<{ epub_watch_folder: string; auto_scan_interval: string }> {
   const res = await apiFetch('/api/v1/epub/settings')
   if (!res.ok) throw new Error(`Failed to load settings: ${res.status}`)

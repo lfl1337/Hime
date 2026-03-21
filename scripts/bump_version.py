@@ -120,8 +120,11 @@ def main() -> None:
     )
     subprocess.run(["git", "tag", f"v{new}"], check=True, cwd=str(ROOT))
 
-    print(f"\nDone. Version is now {new}. Tag v{new} created.")
-    print("To push: git push && git push --tags")
+    print("\nPushing to GitHub...")
+    subprocess.run(["git", "push"], check=True, cwd=str(ROOT))
+    subprocess.run(["git", "push", "--tags"], check=True, cwd=str(ROOT))
+
+    print(f"\nDone. Version is now {new}. Tag v{new} pushed.")
     print("Or run:  python scripts/release.py for a full release build.")
 
 

@@ -1,11 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTheme } from '@/App'
-import { getTrainingConfig, type TrainingConfig } from '@/api/training'
-import { getEpubSettings } from '@/api/epub'
+import { getTrainingConfig, updateTrainingConfig } from '@/api/training'
+import { getEpubSettings, updateEpubSetting } from '@/api/epub'
 import { getHealthInfo } from '@/api/client'
 
 // ---------------------------------------------------------------------------
-// Pill toggle helper
+// Open URL — Tauri shell with window.open fallback
+// ---------------------------------------------------------------------------
+
+async function openUrl(url: string) {
+  try {
+    const { open } = await import('@tauri-apps/plugin-shell')
+    await open(url)
+  } catch {
+    window.open(url, '_blank')
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pill toggle
 // ---------------------------------------------------------------------------
 
 interface PillOption<T extends string> {
@@ -42,7 +55,7 @@ function PillToggle<T extends string>({
 }
 
 // ---------------------------------------------------------------------------
-// Section wrapper
+// Section / Row wrappers
 // ---------------------------------------------------------------------------
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -94,6 +107,74 @@ function CopyButton({ text }: { text: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Editable path row
+// ---------------------------------------------------------------------------
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+
+function PathRow({
+  label,
+  initialValue,
+  onSave,
+}: {
+  label: string
+  initialValue: string
+  onSave: (value: string) => Promise<void>
+}) {
+  const [value, setValue] = useState(initialValue)
+  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const timerRef = useRef<number | null>(null)
+
+  // Sync when parent loads data
+  useEffect(() => { setValue(initialValue) }, [initialValue])
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
+
+  const handleSave = async () => {
+    setSaveState('saving')
+    try {
+      await onSave(value)
+      setSaveState('saved')
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = window.setTimeout(() => setSaveState('idle'), 2000)
+    } catch {
+      setSaveState('error')
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = window.setTimeout(() => setSaveState('idle'), 3000)
+    }
+  }
+
+  const saveLabel = saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved!' : saveState === 'error' ? 'Error' : 'Save'
+  const saveColor = saveState === 'saved'
+    ? 'bg-green-800 text-green-200'
+    : saveState === 'error'
+    ? 'bg-red-900 text-red-300'
+    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
+
+  return (
+    <div className="px-4 py-3">
+      <div className="text-xs text-zinc-500 mb-1.5">{label}</div>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          className="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg px-3 py-1.5 focus:outline-none focus:border-violet-500 min-w-0"
+        />
+        <button
+          onClick={() => void handleSave()}
+          disabled={saveState === 'saving'}
+          className={`px-2.5 py-1.5 text-xs rounded-lg transition-colors min-w-[52px] ${saveColor}`}
+        >
+          {saveLabel}
+        </button>
+        <CopyButton text={value} />
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Settings view
 // ---------------------------------------------------------------------------
 
@@ -109,9 +190,18 @@ const CHECKPOINT_OPTIONS: PillOption<'best' | 'latest'>[] = [
 ]
 
 export function Settings() {
-  const { current: currentTheme, applyTheme } = useTheme()
+  const { applyTheme } = useTheme()
 
-  // Training defaults — read from localStorage
+  // FIX 3: own state so the active pill updates immediately on click
+  const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(
+    () => (localStorage.getItem('hime_theme') ?? 'dark') as 'dark' | 'light' | 'system'
+  )
+  const handleTheme = (v: 'dark' | 'light' | 'system') => {
+    setTheme(v)
+    applyTheme(v)
+  }
+
+  // Training defaults
   const [checkpointPref, setCheckpointPref] = useState<'best' | 'latest'>(
     () => (localStorage.getItem('hime_default_checkpoint') as 'best' | 'latest') ?? 'best'
   )
@@ -123,19 +213,26 @@ export function Settings() {
   )
 
   // Paths
-  const [trainingConfig, setTrainingConfig] = useState<TrainingConfig | null>(null)
-  const [epubFolder, setEpubFolder] = useState<string | null>(null)
+  const [modelsBasePath, setModelsBasePath] = useState('')
+  const [loraPath, setLoraPath] = useState('')
+  const [trainingLogPath, setTrainingLogPath] = useState('')
+  const [scriptsPath, setScriptsPath] = useState('')
+  const [epubFolder, setEpubFolder] = useState('')
 
   // About
   const [backendVersion, setBackendVersion] = useState<string | null>(null)
 
   useEffect(() => {
-    getTrainingConfig().then(setTrainingConfig).catch(() => {})
+    getTrainingConfig().then(cfg => {
+      setModelsBasePath(cfg.models_base_path)
+      setLoraPath(cfg.lora_path)
+      setTrainingLogPath(cfg.training_log_path)
+      setScriptsPath(cfg.scripts_path)
+    }).catch(() => {})
     getEpubSettings().then(s => setEpubFolder(s.epub_watch_folder)).catch(() => {})
     getHealthInfo().then(h => setBackendVersion(h.version)).catch(() => {})
   }, [])
 
-  // Persist training defaults on change
   const handleCheckpointPref = (v: 'best' | 'latest') => {
     setCheckpointPref(v)
     localStorage.setItem('hime_default_checkpoint', v)
@@ -149,14 +246,6 @@ export function Settings() {
     localStorage.setItem('hime_default_conda_env', v)
   }
 
-  const pathRows = [
-    { label: 'EPUB Watch Folder', value: epubFolder },
-    { label: 'Models Base Path', value: trainingConfig?.models_base_path ?? null },
-    { label: 'LoRA Path', value: trainingConfig?.lora_path ?? null },
-    { label: 'Training Log Path', value: trainingConfig?.training_log_path ?? null },
-    { label: 'Scripts Path', value: trainingConfig?.scripts_path ?? null },
-  ]
-
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
       <h1 className="text-xl font-bold text-zinc-100 mb-6">Settings</h1>
@@ -164,7 +253,7 @@ export function Settings() {
       {/* ── Appearance ─────────────────────────────────────────────────── */}
       <Section title="Appearance">
         <Row label="Theme">
-          <PillToggle options={THEME_OPTIONS} value={currentTheme} onChange={applyTheme} />
+          <PillToggle options={THEME_OPTIONS} value={theme} onChange={handleTheme} />
         </Row>
       </Section>
 
@@ -195,17 +284,31 @@ export function Settings() {
 
       {/* ── Paths ──────────────────────────────────────────────────────── */}
       <Section title="Paths">
-        {pathRows.map(({ label, value }) => (
-          <div key={label} className="px-4 py-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-zinc-300 min-w-[140px]">{label}</span>
-              <span className="text-xs text-zinc-500 font-mono truncate flex-1 text-right">
-                {value ?? '—'}
-              </span>
-              {value && <CopyButton text={value} />}
-            </div>
-          </div>
-        ))}
+        <PathRow
+          label="EPUB Watch Folder"
+          initialValue={epubFolder}
+          onSave={v => updateEpubSetting('epub_watch_folder', v)}
+        />
+        <PathRow
+          label="Models Base Path"
+          initialValue={modelsBasePath}
+          onSave={v => updateTrainingConfig('models_base_path', v).then(cfg => setModelsBasePath(cfg.models_base_path))}
+        />
+        <PathRow
+          label="LoRA Path"
+          initialValue={loraPath}
+          onSave={v => updateTrainingConfig('lora_path', v).then(cfg => setLoraPath(cfg.lora_path))}
+        />
+        <PathRow
+          label="Training Log Path"
+          initialValue={trainingLogPath}
+          onSave={v => updateTrainingConfig('training_log_path', v).then(cfg => setTrainingLogPath(cfg.training_log_path))}
+        />
+        <PathRow
+          label="Scripts Path"
+          initialValue={scriptsPath}
+          onSave={v => updateTrainingConfig('scripts_path', v).then(cfg => setScriptsPath(cfg.scripts_path))}
+        />
       </Section>
 
       {/* ── About ──────────────────────────────────────────────────────── */}
@@ -213,7 +316,7 @@ export function Settings() {
         <div className="px-4 py-4 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-zinc-300 font-semibold">Hime</span>
-            <span className="text-sm text-zinc-500 font-mono">v0.7.0</span>
+            <span className="text-sm text-zinc-500 font-mono">v0.7.1</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-zinc-300">Backend</span>
@@ -221,13 +324,13 @@ export function Settings() {
           </div>
           <div className="border-t border-zinc-800 pt-3 mt-3 flex gap-2">
             <button
-              onClick={() => window.open('https://github.com/lfl1337/Hime', '_blank')}
+              onClick={() => void openUrl('https://github.com/lfl1337/Hime')}
               className="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
             >
               Open on GitHub
             </button>
             <button
-              onClick={() => window.open('https://github.com/lfl1337/Hime/releases', '_blank')}
+              onClick={() => void openUrl('https://github.com/lfl1337/Hime/releases')}
               className="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
             >
               Check for updates

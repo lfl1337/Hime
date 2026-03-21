@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ..config import settings
+from ..config import _ENV_FILE, settings
 from ..services.training_monitor import (
     CheckpointInfo,
     GGUFModelInfo,
@@ -148,9 +148,46 @@ async def api_available_checkpoints(model_name: str) -> dict:
     return {"checkpoints": get_available_checkpoints(model_name)}
 
 
+_EDITABLE_TRAINING_KEYS = {"models_base_path", "lora_path", "training_log_path", "scripts_path"}
+
+
+class TrainingConfigUpdate(BaseModel):
+    key: str
+    value: str
+
+
 @router.get("/config")
 async def training_config() -> dict:
     """Read-only backend config values for the Settings page."""
+    return {
+        "models_base_path": settings.models_base_path,
+        "lora_path": settings.lora_path,
+        "training_log_path": settings.training_log_path,
+        "scripts_path": settings.scripts_path,
+    }
+
+
+@router.post("/config")
+async def update_training_config(body: TrainingConfigUpdate) -> dict:
+    """Update a training config path. Persists to .env and updates in memory."""
+    if body.key not in _EDITABLE_TRAINING_KEYS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown config key: {body.key}",
+        )
+    setattr(settings, body.key, body.value)
+    env_path = Path(_ENV_FILE)
+    lines: list[str] = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    key_upper = body.key.upper()
+    updated = False
+    for i, line in enumerate(lines):
+        if line.startswith(f"{key_upper}=") or line.startswith(f"{key_upper} ="):
+            lines[i] = f"{key_upper}={body.value}"
+            updated = True
+            break
+    if not updated:
+        lines.append(f"{key_upper}={body.value}")
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return {
         "models_base_path": settings.models_base_path,
         "lora_path": settings.lora_path,

@@ -21,6 +21,9 @@ backend/.env
 # Runtime state (ephemeral — generated on each startup)
 backend/.runtime_port
 
+# Dev API key — written by run.py, read by vite.config.ts, never commit
+backend/.api_key
+
 # Database
 backend/*.db
 backend/*.db-shm

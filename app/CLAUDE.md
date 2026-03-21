@@ -88,3 +88,11 @@ The `docker/` directory will eventually contain a `Dockerfile` and `compose.yml`
 - Pydantic v2 for all data validation
 - All new endpoints must call `sanitize_text()` on user-supplied string inputs
 - Rate-limit decorators go on mutation/expensive endpoints, not reads
+
+## Versioning
+
+After every session where code changes were made, always run:
+```
+python scripts/bump_version.py patch
+git push && git push --tags
+```

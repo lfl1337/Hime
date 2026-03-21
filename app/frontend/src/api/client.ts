@@ -77,7 +77,19 @@ async function getPort(): Promise<number> {
 export async function getApiKey(): Promise<string> {
   if (cachedApiKey !== null) return cachedApiKey
 
-  // Try AppData .env (production Tauri sidecar mode)
+  // Dev mode: key injected at build time by Vite from backend/.api_key.
+  // The Tauri fs API is unavailable in a plain browser — don't try.
+  if (import.meta.env.DEV) {
+    cachedApiKey = __DEV_API_KEY__
+    if (cachedApiKey) {
+      console.log(`[client] getApiKey: using injected dev key (length=${cachedApiKey.length})`)
+    } else {
+      console.warn('[client] getApiKey: __DEV_API_KEY__ is empty — start the backend then restart Vite')
+    }
+    return cachedApiKey
+  }
+
+  // Production: read from %APPDATA%\dev.hime.app\.env via Tauri fs API.
   try {
     const { appDataDir } = await import('@tauri-apps/api/path')
     const dir = await appDataDir()
@@ -100,18 +112,7 @@ export async function getApiKey(): Promise<string> {
     console.warn('[client] getApiKey: appDataDir() failed:', err)
   }
 
-  // Fallback: localStorage (set once via setApiKey() or browser console)
-  const stored = localStorage.getItem('hime_api_key')
-  if (stored) {
-    console.log('[client] getApiKey: loaded from localStorage')
-    cachedApiKey = stored
-    return stored
-  }
-
-  console.error(
-    '[client] getApiKey: no API key found — requests will fail with 401.\n' +
-    'Fix: localStorage.setItem("hime_api_key", "<value of API_KEY from %APPDATA%\\dev.hime.app\\.env>")',
-  )
+  console.error('[client] getApiKey: no API key found — requests will fail with 401.')
   return ''
 }
 

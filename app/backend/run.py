@@ -48,6 +48,12 @@ from app.config import settings  # noqa: E402
 from app.utils.ports import find_free_port  # noqa: E402
 
 _RUNTIME_PORT_FILE = _DATA_DIR / ".runtime_port"
+
+# Write the API key to .api_key so the Vite dev server can inject it at
+# build time (vite.config.ts reads this file and passes it via define:).
+# In dev mode _DATA_DIR is beside run.py (backend/), which is exactly where
+# vite.config.ts looks.  In production the file goes to AppData — harmless.
+(_DATA_DIR / ".api_key").write_text(settings.api_key, encoding="utf-8")
 _HOST = "127.0.0.1"
 
 

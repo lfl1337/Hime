@@ -45,6 +45,7 @@ app/frontend/src-tauri/binaries/
 .env
 # .env.example is intentionally NOT ignored — it's safe to commit
 .runtime_port
+.api_key
 
 # ─── Logs ────────────────────────────────────────────────────────────────────
 *.log

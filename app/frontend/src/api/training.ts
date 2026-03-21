@@ -175,3 +175,47 @@ export async function getBackendLog(lines = 50): Promise<{ lines: string[] }> {
   if (!res.ok) throw new Error(`Failed to load backend log: ${res.status}`)
   return res.json() as Promise<{ lines: string[] }>
 }
+
+// ---------------------------------------------------------------------------
+// Hardware monitoring
+// ---------------------------------------------------------------------------
+
+export interface HardwareStats {
+  timestamp: string
+  gpu_name: string
+  gpu_vram_used_mb: number
+  gpu_vram_total_mb: number
+  gpu_vram_pct: number
+  gpu_utilization_pct: number
+  gpu_memory_pct: number
+  gpu_temp_celsius: number
+  gpu_power_draw_w: number
+  gpu_power_limit_w: number
+  gpu_clock_mhz: number
+  gpu_max_clock_mhz: number
+  cpu_utilization_pct: number
+  cpu_freq_mhz: number
+  cpu_core_count: number
+  ram_used_gb: number
+  ram_total_gb: number
+  ram_pct: number
+  disk_read_mb_s: number
+  disk_write_mb_s: number
+}
+
+export async function getHardwareStats(): Promise<HardwareStats> {
+  const res = await apiFetch('/api/v1/hardware/stats')
+  if (!res.ok) throw new Error(`hardware/stats failed: ${res.statusText}`)
+  return res.json() as Promise<HardwareStats>
+}
+
+export async function getHardwareHistory(minutes = 10): Promise<HardwareStats[]> {
+  const res = await apiFetch(`/api/v1/hardware/history?minutes=${minutes}`)
+  if (!res.ok) throw new Error(`hardware/history failed: ${res.statusText}`)
+  return res.json() as Promise<HardwareStats[]>
+}
+
+export async function createHardwareEventSource(): Promise<EventSource> {
+  const baseUrl = await getBaseUrl()
+  return new EventSource(`${baseUrl}/api/v1/hardware/stream`)
+}

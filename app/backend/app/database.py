@@ -48,6 +48,38 @@ async def init_db() -> None:
         if "is_front_matter" not in existing_ch:
             await conn.execute(text("ALTER TABLE chapters ADD COLUMN is_front_matter BOOLEAN DEFAULT 0"))
 
+        # Create hardware_stats table if missing
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS hardware_stats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                gpu_name TEXT,
+                gpu_vram_used_mb INTEGER,
+                gpu_vram_total_mb INTEGER,
+                gpu_vram_pct REAL,
+                gpu_utilization_pct INTEGER,
+                gpu_memory_pct INTEGER,
+                gpu_temp_celsius INTEGER,
+                gpu_power_draw_w REAL,
+                gpu_power_limit_w REAL,
+                gpu_clock_mhz INTEGER,
+                gpu_max_clock_mhz INTEGER,
+                cpu_utilization_pct REAL,
+                cpu_freq_mhz REAL,
+                cpu_core_count INTEGER,
+                ram_used_gb REAL,
+                ram_total_gb REAL,
+                ram_pct REAL,
+                disk_read_mb_s REAL,
+                disk_write_mb_s REAL
+            )
+        """))
+
+        # Prune hardware_stats older than 24 hours
+        await conn.execute(text(
+            "DELETE FROM hardware_stats WHERE timestamp < datetime('now', '-24 hours')"
+        ))
+
         # Seed default settings (INSERT OR IGNORE preserves user changes)
         await conn.execute(text(
             "INSERT OR IGNORE INTO settings (key, value) VALUES "

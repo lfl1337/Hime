@@ -77,12 +77,15 @@ You are a professional Japanese to English translator specializing in yuri light
 
 def load_training_data() -> Dataset:
     """Lädt und formatiert die Trainingsdaten."""
+    import time as _time
     data_file = TRAINING_DIR / "hime_training_all.jsonl"
 
     if not data_file.exists():
         raise FileNotFoundError(f"Trainingsdaten nicht gefunden: {data_file}")
 
     print(f"[..] Lade Trainingsdaten aus {data_file.name} ...")
+    print("[INFO] Starte Tokenisierung der Trainingsdaten...")
+    _tok_start = _time.time()
     entries = []
 
     with open(data_file, 'r', encoding='utf-8') as f:
@@ -106,7 +109,9 @@ def load_training_data() -> Dataset:
             )
             entries.append({"text": text})
 
+    _tok_duration = _time.time() - _tok_start
     print(f"[OK] {len(entries):,} Trainingsbeispiele geladen")
+    print(f"[INFO] Tokenisierung abgeschlossen in {_tok_duration:.1f}s")
 
     # 90% Train, 10% Eval
     split = int(len(entries) * 0.9)
@@ -120,9 +125,11 @@ def load_training_data() -> Dataset:
 
 def load_model():
     """Lädt Basismodell mit Unsloth 4-bit Quantisierung."""
-    print(f"\n[..] Lade Modell: {MODEL_NAME}")
+    import time as _time
+    print(f"\n[INFO] Lade Modell: {MODEL_NAME}")
     print(f"     Max Seq Len: {MAX_SEQ_LEN}")
 
+    _load_start = _time.time()
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name      = MODEL_NAME,
         max_seq_length  = MAX_SEQ_LEN,
@@ -130,8 +137,9 @@ def load_model():
         load_in_4bit    = True,       # QLoRA
         trust_remote_code = True,
     )
+    _load_time = _time.time() - _load_start
 
-    print(f"[OK] Modell geladen")
+    print(f"[INFO] Modell geladen ({_load_time:.1f}s)")
     return model, tokenizer
 
 
@@ -188,8 +196,30 @@ def get_target_modules():
                 "gate_proj", "up_proj", "down_proj"]
 
 
+class SaveCheckpointCallback:
+    """Logs a structured [CHECKPOINT] line when the trainer saves a checkpoint."""
+    def on_save(self, args, state, control, **kwargs):
+        checkpoint_path = f"checkpoint-{state.global_step}"
+        print(f"[CHECKPOINT] Gespeichert: {checkpoint_path}")
+        return control
+
+    # Satisfy TrainerCallback duck-typing for other events
+    def on_train_begin(self, *a, **kw): return kw.get("control")
+    def on_train_end(self, *a, **kw): return kw.get("control")
+    def on_epoch_begin(self, *a, **kw): return kw.get("control")
+    def on_epoch_end(self, *a, **kw): return kw.get("control")
+    def on_step_begin(self, *a, **kw): return kw.get("control")
+    def on_step_end(self, *a, **kw): return kw.get("control")
+    def on_evaluate(self, *a, **kw): return kw.get("control")
+    def on_log(self, *a, **kw): return kw.get("control")
+    def on_prediction_step(self, *a, **kw): return kw.get("control")
+    def on_predict(self, *a, **kw): return kw.get("control")
+    def on_init_end(self, *a, **kw): return kw.get("control")
+
+
 def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
     """Startet das Training."""
+    import time as _time
     print(f"\n[..] Starte Training")
     print(f"     Modell:        {ADAPTER_NAME}")
     print(f"     Epochs:        {EPOCHS}")
@@ -223,6 +253,11 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
         dataloader_num_workers      = 0,              # Windows Kompatibilität
     )
 
+    # Estimate total steps for the info print
+    steps_per_epoch = max(1, len(train_dataset) // (BATCH_SIZE * GRAD_ACCUM))
+    total_steps = steps_per_epoch * EPOCHS
+    print(f"[INFO] Starte Training: {total_steps} Steps, {EPOCHS} Epochen")
+
     trainer = SFTTrainer(
         model           = model,
         tokenizer       = tokenizer,
@@ -232,9 +267,11 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
         max_seq_length  = MAX_SEQ_LEN,
         args            = training_args,
         packing         = True,    # Mehrere kurze Beispiele in einen Batch packen
+        callbacks       = [SaveCheckpointCallback()],
     )
 
     # Training starten (mit oder ohne Checkpoint)
+    _train_start = _time.time()
     try:
         if resume_from:
             print(f"[i]  Weitermachen von: {resume_from}")
@@ -243,12 +280,18 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
             trainer.train()
 
     except KeyboardInterrupt:
-        print(f"\n\n[i]  Gestoppt! Speichere Checkpoint ...")
+        current_step = trainer.state.global_step if trainer.state else 0
+        print(f"[UNTERBROCHEN] Training unterbrochen bei Step {current_step}")
+        print(f"\n\n[i]  Speichere Checkpoint ...")
         trainer.save_model(str(OUTPUT_DIR / "checkpoint" / "interrupted"))
         print(f"[OK] Checkpoint gespeichert")
         return trainer
 
-    print(f"\n[OK] Training abgeschlossen!")
+    _total_time = _time.time() - _train_start
+    hrs, rem = divmod(int(_total_time), 3600)
+    mins, secs = divmod(rem, 60)
+    _time_str = f"{hrs}h {mins}m {secs}s" if hrs else f"{mins}m {secs}s"
+    print(f"[FERTIG] Training abgeschlossen in {_time_str}")
     return trainer
 
 
@@ -306,12 +349,28 @@ if __name__ == "__main__":
         def __init__(self, original, log_file):
             self.original = original
             self.log_file = log_file
+            self._buffer = ""
+
+        def _timestamp(self) -> str:
+            from datetime import datetime
+            return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+
         def write(self, text):
             self.original.write(text)
-            self.log_file.write(text)
-            self.log_file.flush()
+            self._buffer += text
+            while "\n" in self._buffer:
+                line, self._buffer = self._buffer.split("\n", 1)
+                if line.strip():
+                    self.log_file.write(f"{self._timestamp()} {line}\n")
+                    self.log_file.flush()
+
         def flush(self):
             self.original.flush()
+            if self._buffer.strip():
+                self.log_file.write(f"{self._timestamp()} {self._buffer}\n")
+                self.log_file.flush()
+                self._buffer = ""
+
         def isatty(self): return False
 
     _parser = argparse.ArgumentParser(add_help=False)

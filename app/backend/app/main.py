@@ -17,8 +17,10 @@ from .middleware.audit import AuditMiddleware
 from .middleware.rate_limit import limiter
 from .routers import texts, translations, training
 from .routers import epub as epub_router
+from .routers import hardware as hardware_router
 from .websocket import streaming
 from .services.epub_service import get_setting, scan_watch_folder
+from .services.hardware_monitor import get_hardware_stats, save_hardware_stats
 
 DEFAULT_WATCH_FOLDER = "C:/Projekte/Hime/data/epubs/"
 
@@ -31,6 +33,16 @@ async def _scan_loop() -> None:
             await scan_watch_folder(folder, session)
 
 
+async def _hardware_loop() -> None:
+    while True:
+        await asyncio.sleep(5)
+        try:
+            stats = await asyncio.to_thread(get_hardware_stats)
+            await asyncio.to_thread(save_hardware_stats, stats)
+        except Exception:
+            pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _log.info("FastAPI lifespan startup: DB init + watch folder scan")
@@ -39,19 +51,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with AsyncSessionLocal() as session:
         folder = await get_setting("epub_watch_folder", session) or DEFAULT_WATCH_FOLDER
         await scan_watch_folder(folder, session)
-    # Background 60-second periodic scan
-    task = asyncio.create_task(_scan_loop())
+    # Background tasks
+    scan_task = asyncio.create_task(_scan_loop())
+    hw_task = asyncio.create_task(_hardware_loop())
     yield
-    task.cancel()
+    scan_task.cancel()
+    hw_task.cancel()
     with suppress(asyncio.CancelledError):
-        await task
+        await scan_task
+    with suppress(asyncio.CancelledError):
+        await hw_task
     _log.info("FastAPI lifespan shutdown")
 
 
 app = FastAPI(
     title="Hime Translation API",
     description="Local-first Japanese-to-English light novel translation",
-    version="0.5.1",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
@@ -94,10 +110,11 @@ app.include_router(texts.router, prefix="/api/v1")
 app.include_router(translations.router, prefix="/api/v1")
 app.include_router(training.router, prefix="/api/v1")
 app.include_router(epub_router.router, prefix="/api/v1")
+app.include_router(hardware_router.router, prefix="/api/v1")
 app.include_router(streaming.router)  # WebSocket — no /api/v1 prefix
 
 
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     """Liveness check — no auth required."""
-    return {"status": "ok", "app": "hime", "version": "0.5.1"}
+    return {"status": "ok", "app": "hime", "version": "0.6.0"}

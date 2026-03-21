@@ -207,7 +207,12 @@ async def list_conda_envs() -> dict:
             capture_output=True, text=True, timeout=10,
         )
         data = json.loads(result.stdout)
-        envs = [Path(p).name for p in data.get("envs", [])]
+        # Use envs_details[path].name when available (gives "base" not the dir name)
+        details: dict = data.get("envs_details", {})
+        envs: list[str] = []
+        for p in data.get("envs", []):
+            name = details.get(p, {}).get("name") or Path(p).name
+            envs.append(name)
         return {"envs": envs if envs else ["hime"]}
     except Exception:
         return {"envs": ["hime"]}

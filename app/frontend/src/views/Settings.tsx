@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { open as shellOpen } from '@tauri-apps/plugin-shell'
+import { openUrl as openerOpenUrl } from '@tauri-apps/plugin-opener'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { useTheme } from '@/App'
 import { getTrainingConfig, updateTrainingConfig, getCondaEnvs } from '@/api/training'
@@ -12,7 +12,7 @@ import { getHealthInfo } from '@/api/client'
 
 async function openUrl(url: string) {
   try {
-    await shellOpen(url)
+    await openerOpenUrl(url)
   } catch {
     window.open(url, '_blank')
   }

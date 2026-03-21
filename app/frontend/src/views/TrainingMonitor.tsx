@@ -152,7 +152,7 @@ export function TrainingMonitor() {
     })
 
     return () => clearTimeout(timeoutId)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   // Keep selectedRunRef in sync with selectedRun
   useEffect(() => {

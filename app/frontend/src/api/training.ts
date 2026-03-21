@@ -189,6 +189,13 @@ export async function getTrainingConfig(): Promise<TrainingConfig> {
   return res.json() as Promise<TrainingConfig>
 }
 
+export async function getCondaEnvs(): Promise<string[]> {
+  const res = await apiFetch('/api/v1/training/conda-envs')
+  if (!res.ok) throw new Error(`conda-envs failed: ${res.statusText}`)
+  const data = await res.json() as { envs: string[] }
+  return data.envs
+}
+
 export async function updateTrainingConfig(key: string, value: string): Promise<TrainingConfig> {
   const res = await apiFetch('/api/v1/training/config', {
     method: 'POST',

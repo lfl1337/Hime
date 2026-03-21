@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { open as shellOpen } from '@tauri-apps/plugin-shell'
+import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { useTheme } from '@/App'
-import { getTrainingConfig, updateTrainingConfig } from '@/api/training'
+import { getTrainingConfig, updateTrainingConfig, getCondaEnvs } from '@/api/training'
 import { getEpubSettings, updateEpubSetting } from '@/api/epub'
 import { getHealthInfo } from '@/api/client'
 
@@ -10,10 +12,26 @@ import { getHealthInfo } from '@/api/client'
 
 async function openUrl(url: string) {
   try {
-    const { open } = await import('@tauri-apps/plugin-shell')
-    await open(url)
+    await shellOpen(url)
   } catch {
     window.open(url, '_blank')
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Browse folder — Tauri dialog with toast fallback
+// ---------------------------------------------------------------------------
+
+async function browseFolder(defaultPath: string): Promise<string | null> {
+  try {
+    const selected = await dialogOpen({
+      directory: true,
+      multiple: false,
+      defaultPath: defaultPath || undefined,
+    })
+    return typeof selected === 'string' ? selected : null
+  } catch {
+    return null
   }
 }
 
@@ -107,7 +125,7 @@ function CopyButton({ text }: { text: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Editable path row
+// Editable path row (with Browse button)
 // ---------------------------------------------------------------------------
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
@@ -125,9 +143,7 @@ function PathRow({
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const timerRef = useRef<number | null>(null)
 
-  // Sync when parent loads data
   useEffect(() => { setValue(initialValue) }, [initialValue])
-
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
   const handleSave = async () => {
@@ -142,6 +158,11 @@ function PathRow({
       if (timerRef.current) clearTimeout(timerRef.current)
       timerRef.current = window.setTimeout(() => setSaveState('idle'), 3000)
     }
+  }
+
+  const handleBrowse = async () => {
+    const selected = await browseFolder(value)
+    if (selected) setValue(selected)
   }
 
   const saveLabel = saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved!' : saveState === 'error' ? 'Error' : 'Save'
@@ -161,6 +182,12 @@ function PathRow({
           onChange={e => setValue(e.target.value)}
           className="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg px-3 py-1.5 focus:outline-none focus:border-violet-500 min-w-0"
         />
+        <button
+          onClick={() => void handleBrowse()}
+          className="px-2.5 py-1.5 text-xs rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+        >
+          Browse…
+        </button>
         <button
           onClick={() => void handleSave()}
           disabled={saveState === 'saving'}
@@ -192,7 +219,6 @@ const CHECKPOINT_OPTIONS: PillOption<'best' | 'latest'>[] = [
 export function Settings() {
   const { applyTheme } = useTheme()
 
-  // FIX 3: own state so the active pill updates immediately on click
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(
     () => (localStorage.getItem('hime_theme') ?? 'dark') as 'dark' | 'light' | 'system'
   )
@@ -211,6 +237,7 @@ export function Settings() {
   const [defaultCondaEnv, setDefaultCondaEnv] = useState<string>(
     () => localStorage.getItem('hime_default_conda_env') ?? 'hime'
   )
+  const [condaEnvs, setCondaEnvs] = useState<string[] | null>(null)
 
   // Paths
   const [modelsBasePath, setModelsBasePath] = useState('')
@@ -231,6 +258,10 @@ export function Settings() {
     }).catch(() => {})
     getEpubSettings().then(s => setEpubFolder(s.epub_watch_folder)).catch(() => {})
     getHealthInfo().then(h => setBackendVersion(h.version)).catch(() => {})
+    getCondaEnvs().then(envs => {
+      setCondaEnvs(envs)
+      // If saved env isn't in the list, keep it as a custom value
+    }).catch(() => setCondaEnvs(null))
   }, [])
 
   const handleCheckpointPref = (v: 'best' | 'latest') => {
@@ -245,6 +276,13 @@ export function Settings() {
     setDefaultCondaEnv(v)
     localStorage.setItem('hime_default_conda_env', v)
   }
+
+  // Ensure current value is in the dropdown options (add as custom entry if not)
+  const condaOptions = condaEnvs
+    ? condaEnvs.includes(defaultCondaEnv)
+      ? condaEnvs
+      : [defaultCondaEnv, ...condaEnvs]
+    : null
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
@@ -273,12 +311,26 @@ export function Settings() {
           />
         </Row>
         <Row label="Conda environment">
-          <input
-            type="text"
-            value={defaultCondaEnv}
-            onChange={e => handleCondaEnv(e.target.value)}
-            className="w-40 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1 focus:outline-none focus:border-violet-500"
-          />
+          {condaOptions ? (
+            <select
+              value={defaultCondaEnv}
+              onChange={e => handleCondaEnv(e.target.value)}
+              className="w-44 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1 focus:outline-none focus:border-violet-500"
+            >
+              {condaOptions.map(env => (
+                <option key={env} value={env}>{env}</option>
+              ))}
+            </select>
+          ) : condaEnvs === null && (
+            // Still loading or failed — show text input fallback
+            <input
+              type="text"
+              value={defaultCondaEnv}
+              onChange={e => handleCondaEnv(e.target.value)}
+              placeholder="Loading…"
+              className="w-40 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1 focus:outline-none focus:border-violet-500"
+            />
+          )}
         </Row>
       </Section>
 
@@ -316,7 +368,7 @@ export function Settings() {
         <div className="px-4 py-4 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-zinc-300 font-semibold">Hime</span>
-            <span className="text-sm text-zinc-500 font-mono">v0.7.1</span>
+            <span className="text-sm text-zinc-500 font-mono">v0.7.2</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-zinc-300">Backend</span>

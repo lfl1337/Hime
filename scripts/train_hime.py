@@ -21,7 +21,7 @@ from unsloth import FastLanguageModel
 import json, torch
 from pathlib import Path
 from datasets import Dataset
-from transformers import TrainingArguments
+from transformers import TrainerCallback, TrainingArguments
 from trl import SFTTrainer
 
 # ═══════════════════════════════════════════════════════════════
@@ -196,25 +196,25 @@ def get_target_modules():
                 "gate_proj", "up_proj", "down_proj"]
 
 
-class SaveCheckpointCallback:
-    """Logs a structured [CHECKPOINT] line when the trainer saves a checkpoint."""
+class SaveCheckpointCallback(TrainerCallback):
+    """Structured log lines for checkpoint saves, epoch ends, and training lifecycle."""
+
     def on_save(self, args, state, control, **kwargs):
-        checkpoint_path = f"checkpoint-{state.global_step}"
-        print(f"[CHECKPOINT] Gespeichert: {checkpoint_path}")
+        checkpoint = state.best_model_checkpoint or f"step-{state.global_step}"
+        print(f"[CHECKPOINT] Gespeichert: {checkpoint}")
         return control
 
-    # Satisfy TrainerCallback duck-typing for other events
-    def on_train_begin(self, *a, **kw): return kw.get("control")
-    def on_train_end(self, *a, **kw): return kw.get("control")
-    def on_epoch_begin(self, *a, **kw): return kw.get("control")
-    def on_epoch_end(self, *a, **kw): return kw.get("control")
-    def on_step_begin(self, *a, **kw): return kw.get("control")
-    def on_step_end(self, *a, **kw): return kw.get("control")
-    def on_evaluate(self, *a, **kw): return kw.get("control")
-    def on_log(self, *a, **kw): return kw.get("control")
-    def on_prediction_step(self, *a, **kw): return kw.get("control")
-    def on_predict(self, *a, **kw): return kw.get("control")
-    def on_init_end(self, *a, **kw): return kw.get("control")
+    def on_train_begin(self, args, state, control, **kwargs):
+        print(f"[INFO] Starte Training: {state.max_steps} Steps")
+        return control
+
+    def on_train_end(self, args, state, control, **kwargs):
+        print(f"[FERTIG] Training abgeschlossen bei Step {state.global_step}")
+        return control
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        print(f"[EPOCH] Epoch {state.epoch:.2f} abgeschlossen")
+        return control
 
 
 def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
@@ -229,45 +229,47 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
     print(f"\n[i]  Stoppen mit Ctrl+C - Checkpoint alle {SAVE_STEPS} Schritte")
 
     training_args = TrainingArguments(
-        output_dir                  = str(OUTPUT_DIR / "checkpoint"),
-        num_train_epochs            = EPOCHS,
-        per_device_train_batch_size = BATCH_SIZE,
-        per_device_eval_batch_size  = BATCH_SIZE,
-        gradient_accumulation_steps = GRAD_ACCUM,
-        learning_rate               = LEARNING_RATE,
-        warmup_ratio                = WARMUP_RATIO,
-        weight_decay                = WEIGHT_DECAY,
-        lr_scheduler_type           = "cosine",
-        optim                       = "adamw_8bit",   # Spart VRAM
-        fp16                        = not torch.cuda.is_bf16_supported(),
-        bf16                        = torch.cuda.is_bf16_supported(),
-        logging_steps               = LOGGING_STEPS,
-        save_steps                  = SAVE_STEPS,
-        eval_steps                  = EVAL_STEPS,
-        eval_strategy               = "steps",
-        save_total_limit            = 3,              # Max 3 Checkpoints behalten
-        load_best_model_at_end      = True,
-        metric_for_best_model       = "eval_loss",
-        report_to                   = "none",         # Kein WandB
-        seed                        = 42,
-        dataloader_num_workers      = 0,              # Windows Kompatibilität
+        output_dir                    = str(OUTPUT_DIR / "checkpoint"),
+        num_train_epochs              = EPOCHS,
+        per_device_train_batch_size   = BATCH_SIZE,
+        per_device_eval_batch_size    = 1,            # Minimal eval VRAM usage
+        gradient_accumulation_steps   = GRAD_ACCUM,
+        learning_rate                 = LEARNING_RATE,
+        warmup_ratio                  = WARMUP_RATIO,
+        weight_decay                  = WEIGHT_DECAY,
+        lr_scheduler_type             = "cosine",
+        optim                         = "adamw_8bit", # 8-bit optimizer → weniger RAM
+        fp16                          = False,         # RTX 5090: bf16 ist nativer
+        bf16                          = True,
+        logging_steps                 = LOGGING_STEPS,
+        save_steps                    = SAVE_STEPS,
+        eval_steps                    = EVAL_STEPS,
+        eval_strategy                 = "steps",
+        save_total_limit              = 3,
+        load_best_model_at_end        = True,
+        metric_for_best_model         = "eval_loss",
+        report_to                     = "none",        # Kein WandB
+        seed                          = 42,
+        dataloader_num_workers        = 0,             # Windows Kompatibilität
+        dataloader_pin_memory         = False,         # Weniger RAM-Pinning
+        average_tokens_across_devices = False,         # Suppresses num_items_in_batch warning
     )
 
-    # Estimate total steps for the info print
-    steps_per_epoch = max(1, len(train_dataset) // (BATCH_SIZE * GRAD_ACCUM))
-    total_steps = steps_per_epoch * EPOCHS
-    print(f"[INFO] Starte Training: {total_steps} Steps, {EPOCHS} Epochen")
+    # Clear VRAM before allocating trainer
+    import gc
+    gc.collect()
+    torch.cuda.empty_cache()
 
     trainer = SFTTrainer(
-        model           = model,
-        tokenizer       = tokenizer,
-        train_dataset   = train_dataset,
-        eval_dataset    = eval_dataset,
+        model              = model,
+        tokenizer          = tokenizer,
+        train_dataset      = train_dataset,
+        eval_dataset       = eval_dataset,
         dataset_text_field = "text",
-        max_seq_length  = MAX_SEQ_LEN,
-        args            = training_args,
-        packing         = True,    # Mehrere kurze Beispiele in einen Batch packen
-        callbacks       = [SaveCheckpointCallback()],
+        max_seq_length     = MAX_SEQ_LEN,
+        args               = training_args,
+        packing            = True,         # Mehrere kurze Beispiele in einen Batch packen
+        callbacks          = [SaveCheckpointCallback()],
     )
 
     # Training starten (mit oder ohne Checkpoint)
@@ -285,7 +287,11 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
         print(f"\n\n[i]  Speichere Checkpoint ...")
         trainer.save_model(str(OUTPUT_DIR / "checkpoint" / "interrupted"))
         print(f"[OK] Checkpoint gespeichert")
-        return trainer
+        del trainer
+        gc.collect()
+        torch.cuda.empty_cache()
+        print(f"[INFO] VRAM freigegeben")
+        return None
 
     _total_time = _time.time() - _train_start
     hrs, rem = divmod(int(_total_time), 3600)
@@ -314,6 +320,12 @@ def save_adapter(model, tokenizer):
 
 
 def main():
+    import gc
+
+    # Memory / parallelism settings — must be set before any CUDA allocation
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     print("=" * 60)
     print(f"  Hime - Training Script")
     print(f"  Modell: {ADAPTER_NAME}")
@@ -328,6 +340,12 @@ def main():
         print("[!] Keine GPU gefunden!")
         return
 
+    # Config summary
+    print(f"[INFO] max_seq_length: {MAX_SEQ_LEN}")
+    print(f"[INFO] gradient_checkpointing: unsloth")
+    print(f"[INFO] optimizer: adamw_8bit")
+    print(f"[INFO] bf16: True")
+
     # Daten laden
     train_dataset, eval_dataset = load_training_data()
 
@@ -340,8 +358,13 @@ def main():
     # Training
     trainer = train(model, tokenizer, train_dataset, eval_dataset, resume_from)
 
-    # Adapter speichern
-    save_adapter(model, tokenizer)
+    # Adapter speichern (skip if training was interrupted)
+    if trainer is not None:
+        save_adapter(model, tokenizer)
+        del model, trainer
+        gc.collect()
+        torch.cuda.empty_cache()
+        print(f"[INFO] VRAM freigegeben")
 
 
 if __name__ == "__main__":

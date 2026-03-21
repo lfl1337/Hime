@@ -7,14 +7,28 @@ import { getEpubSettings, updateEpubSetting } from '@/api/epub'
 import { getHealthInfo } from '@/api/client'
 
 // ---------------------------------------------------------------------------
-// Open URL — Tauri shell with window.open fallback
+// Open URL
+//
+// Must be a plain (non-async) function so that the window.open() browser
+// fallback is called synchronously inside the click-handler gesture context.
+// If called after an `await`, browsers block window.open() as a popup.
 // ---------------------------------------------------------------------------
 
-async function openUrl(url: string) {
-  try {
-    await openerOpenUrl(url)
-  } catch {
-    window.open(url, '_blank')
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+
+function openUrl(url: string, onFallback?: (url: string) => void): void {
+  if (isTauri) {
+    openerOpenUrl(url).catch((e: unknown) => {
+      console.error('[openUrl] opener plugin failed:', e)
+      onFallback?.(url)
+    })
+  } else {
+    // Browser dev mode — synchronous call; runs in gesture context, not blocked
+    const w = window.open(url, '_blank')
+    if (!w) {
+      console.warn('[openUrl] window.open blocked — falling back to clipboard')
+      onFallback?.(url)
+    }
   }
 }
 
@@ -248,6 +262,17 @@ export function Settings() {
 
   // About
   const [backendVersion, setBackendVersion] = useState<string | null>(null)
+  const [urlToast, setUrlToast] = useState<string | null>(null)
+  const urlToastTimer = useRef<number | null>(null)
+
+  const handleUrlFallback = (url: string) => {
+    navigator.clipboard.writeText(url).catch(() => {})
+    if (urlToastTimer.current) clearTimeout(urlToastTimer.current)
+    setUrlToast(url)
+    urlToastTimer.current = window.setTimeout(() => setUrlToast(null), 4000)
+  }
+
+  useEffect(() => () => { if (urlToastTimer.current) clearTimeout(urlToastTimer.current) }, [])
 
   useEffect(() => {
     getTrainingConfig().then(cfg => {
@@ -374,20 +399,26 @@ export function Settings() {
             <span className="text-sm text-zinc-300">Backend</span>
             <span className="text-sm text-zinc-500 font-mono">{backendVersion ? `v${backendVersion}` : '—'}</span>
           </div>
-          <div className="border-t border-zinc-800 pt-3 mt-3 flex gap-2">
+          <div className="border-t border-zinc-800 pt-3 mt-3 flex gap-2 flex-wrap">
             <button
-              onClick={() => void openUrl('https://github.com/lfl1337/Hime')}
+              onClick={() => openUrl('https://github.com/lfl1337/Hime', handleUrlFallback)}
               className="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
             >
               Open on GitHub
             </button>
             <button
-              onClick={() => void openUrl('https://github.com/lfl1337/Hime/releases')}
+              onClick={() => openUrl('https://github.com/lfl1337/Hime/releases', handleUrlFallback)}
               className="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
             >
               Check for updates
             </button>
           </div>
+          {urlToast && (
+            <div className="mt-3 flex items-center gap-2 text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2">
+              <span className="text-zinc-400">Could not open browser. URL copied to clipboard:</span>
+              <span className="font-mono text-violet-400 truncate">{urlToast}</span>
+            </div>
+          )}
         </div>
       </Section>
     </div>

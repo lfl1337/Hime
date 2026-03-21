@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="Hime Translation API",
     description="Local-first Japanese-to-English light novel translation",
-    version="0.6.1",
+    version="0.7.0",
     lifespan=lifespan,
 )
 
@@ -117,4 +117,4 @@ app.include_router(streaming.router)  # WebSocket — no /api/v1 prefix
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     """Liveness check — no auth required."""
-    return {"status": "ok", "app": "hime", "version": "0.6.1"}
+    return {"status": "ok", "app": "hime", "version": "0.7.0"}

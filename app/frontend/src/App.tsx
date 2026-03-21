@@ -5,9 +5,22 @@ import { Translator } from '@/views/Translator'
 import { Comparison } from '@/views/Comparison'
 import { Editor } from '@/views/Editor'
 import { TrainingMonitor } from '@/views/TrainingMonitor'
+import { Settings } from '@/views/Settings'
 import { checkBackendOnline } from '@/api/client'
 import { importEpub } from '@/api/epub'
 import { useStore } from '@/store'
+
+export function useTheme() {
+  const applyTheme = (pref: 'dark' | 'light' | 'system') => {
+    localStorage.setItem('hime_theme', pref)
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    const useDark = pref === 'dark' || (pref === 'system' && prefersDark)
+    document.documentElement.classList.toggle('dark', useDark)
+    document.documentElement.classList.toggle('light', !useDark)
+  }
+  const current = (localStorage.getItem('hime_theme') ?? 'dark') as 'dark' | 'light' | 'system'
+  return { current, applyTheme }
+}
 
 function AppShell() {
   const setBackendState = useStore((s) => s.setBackendState)
@@ -58,6 +71,7 @@ function AppShell() {
           <Route path="/comparison" element={<Comparison />} />
           <Route path="/editor" element={<Editor />} />
           <Route path="/monitor" element={<TrainingMonitor />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
     </div>

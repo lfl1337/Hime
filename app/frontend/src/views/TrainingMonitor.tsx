@@ -187,8 +187,12 @@ export function TrainingMonitor() {
   const [logFilter, setLogFilter] = useState<'all' | 'loss' | 'progress' | 'hardware' | 'checkpoint' | 'error'>('all')
 
   // Training controls state
-  const [trainingEpochs, setTrainingEpochs] = useState(3)
-  const [condaEnv, setCondaEnv] = useState('hime')
+  const [trainingEpochs, setTrainingEpochs] = useState<number>(() =>
+    parseInt(localStorage.getItem('hime_default_epochs') ?? '3') || 3
+  )
+  const [condaEnv, setCondaEnv] = useState<string>(() =>
+    localStorage.getItem('hime_default_conda_env') ?? 'hime'
+  )
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<string | null>(null)
   const [runningProcesses, setRunningProcesses] = useState<TrainingProcess[]>([])
   const [controlError, setControlError] = useState<string | null>(null)
@@ -260,14 +264,14 @@ export function TrainingMonitor() {
     selectedRunRef.current = selectedRun
   }, [selectedRun])
 
-  // Auto-select best checkpoint when checkpoints load
+  // Auto-select checkpoint when checkpoints load, respecting stored preference
   useEffect(() => {
-    if (checkpoints.length === 0) {
-      setSelectedCheckpoint(null)
-      return
-    }
-    const best = checkpoints.find(c => c.is_best) ?? checkpoints.find(c => c.is_last) ?? null
-    setSelectedCheckpoint(best ? best.name : null)
+    if (checkpoints.length === 0) { setSelectedCheckpoint(null); return }
+    const pref = localStorage.getItem('hime_default_checkpoint') ?? 'best'
+    const chosen = pref === 'latest'
+      ? (checkpoints.filter(c => !c.is_interrupted).sort((a, b) => b.step - a.step)[0] ?? null)
+      : (checkpoints.find(c => c.is_best) ?? checkpoints.find(c => c.is_last) ?? null)
+    setSelectedCheckpoint(chosen ? chosen.name : null)
   }, [checkpoints])
 
   // selectedRun effect: load data and connect SSE for the selected run

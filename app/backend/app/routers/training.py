@@ -148,6 +148,17 @@ async def api_available_checkpoints(model_name: str) -> dict:
     return {"checkpoints": get_available_checkpoints(model_name)}
 
 
+@router.get("/config")
+async def training_config() -> dict:
+    """Read-only backend config values for the Settings page."""
+    return {
+        "models_base_path": settings.models_base_path,
+        "lora_path": settings.lora_path,
+        "training_log_path": settings.training_log_path,
+        "scripts_path": settings.scripts_path,
+    }
+
+
 @router.get("/backend-log")
 async def backend_log(
     lines: int = Query(default=50, ge=1, le=500),

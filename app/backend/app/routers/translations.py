@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import require_api_key
 from ..database import get_session
 from ..middleware.rate_limit import limiter
 from ..models import SourceText, Translation
@@ -22,12 +21,11 @@ async def translate_endpoint(
     request: Request,
     body: TranslateRequest,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> dict:
     """
     Create a pending pipeline translation job and return its ID.
 
-    Connect to ``ws://127.0.0.1:8000/ws/translate/{job_id}?api_key=<key>``
+    Connect to ``ws://127.0.0.1:8000/ws/translate/{job_id}``
     to receive live token streaming for all pipeline stages.
     """
     if body.notes:
@@ -59,7 +57,6 @@ async def list_translations(
     skip: int = 0,
     limit: int = 50,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> list[Translation]:
     q = (
         select(Translation)
@@ -77,7 +74,6 @@ async def list_translations(
 async def get_translation(
     translation_id: int,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> Translation:
     translation = await session.get(Translation, translation_id)
     if not translation:
@@ -91,7 +87,6 @@ async def get_translation(
 async def delete_translation(
     translation_id: int,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> None:
     translation = await session.get(Translation, translation_id)
     if not translation:

@@ -8,6 +8,8 @@ No training logic lives here — this is purely a read-only observer.
 import asyncio
 import json
 import math
+import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -67,6 +69,15 @@ _PIPELINE_ROLES: dict[str, str] = {
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+class EtaInfo(BaseModel):
+    pct: int
+    current_step: int
+    total_steps: int
+    elapsed: str
+    eta: str
+    sec_per_it: float
+
+
 class TrainingStatus(BaseModel):
     run_name: str
     model_name: str
@@ -82,6 +93,7 @@ class TrainingStatus(BaseModel):
     has_log_file: bool
     log_file_path: str | None
     scripts_path: str
+    eta_info: EtaInfo | None = None
 
 
 class CheckpointInfo(BaseModel):
@@ -210,6 +222,40 @@ def _derive_status(
 
 
 # ---------------------------------------------------------------------------
+# ETA parsing
+# ---------------------------------------------------------------------------
+
+_TQDM_PATTERN = re.compile(
+    r'(\d+)%\|.*?\|\s*(\d+)/(\d+)\s*\[(\S+)<(\S+),\s*([\d.]+)s/it\]'
+)
+
+
+def parse_eta_from_log(run: str) -> EtaInfo | None:
+    log_file = Path(settings.training_log_path) / f"{run}.log"
+    if not log_file.exists():
+        return None
+    try:
+        with open(log_file, 'rb') as f:
+            f.seek(max(0, os.path.getsize(log_file) - 5120))
+            tail = f.read().decode('utf-8', errors='replace')
+        for line in reversed(tail.splitlines()):
+            m = _TQDM_PATTERN.search(line)
+            if m:
+                pct, cur, total, elapsed, eta, sec_per_it = m.groups()
+                return EtaInfo(
+                    pct=int(pct),
+                    current_step=int(cur),
+                    total_steps=int(total),
+                    elapsed=elapsed,
+                    eta=eta,
+                    sec_per_it=float(sec_per_it),
+                )
+    except Exception:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Public functions
 # ---------------------------------------------------------------------------
 
@@ -235,6 +281,7 @@ def get_training_status(run_name: str) -> TrainingStatus:
             has_log_file=log_file is not None,
             log_file_path=str(log_file) if log_file else None,
             scripts_path=str(settings.scripts_path),
+            eta_info=parse_eta_from_log(run_name),
         )
 
     global_step = state.get("global_step", 0)
@@ -278,6 +325,7 @@ def get_training_status(run_name: str) -> TrainingStatus:
         has_log_file=log_file is not None,
         log_file_path=str(log_file) if log_file else None,
         scripts_path=str(settings.scripts_path),
+        eta_info=parse_eta_from_log(run_name),
     )
 
 
@@ -527,6 +575,7 @@ def get_gguf_models() -> list[GGUFModelInfo]:
 async def stream_events(run_name: str):
     """Async generator yielding SSE-compatible dicts every 3 seconds."""
     last_line_count = 0
+    last_loss_step = -1
     while True:
         try:
             status = get_training_status(run_name)
@@ -538,6 +587,13 @@ async def stream_events(run_name: str):
             for line in lines[last_line_count:]:
                 yield {"event": "log_line", "data": json.dumps({"line": line})}
             last_line_count = len(lines)
+
+            # Emit new loss points since last tick
+            loss_history = get_loss_history(run_name)
+            for point in loss_history:
+                if point.step > last_loss_step:
+                    yield {"event": "loss_point", "data": point.model_dump_json()}
+                    last_loss_step = point.step
         except Exception:
             pass  # Never crash the SSE stream
         await asyncio.sleep(3)

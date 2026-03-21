@@ -79,6 +79,7 @@ class Chapter(Base):
     total_paragraphs: Mapped[int] = mapped_column(Integer, default=0)
     translated_paragraphs: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(32), default="not_started")
+    is_front_matter: Mapped[bool] = mapped_column(Boolean, default=False)
     book: Mapped["Book"] = relationship(back_populates="chapters")
     paragraphs: Mapped[list["Paragraph"]] = relationship(back_populates="chapter", cascade="all, delete-orphan")
 

@@ -1,30 +1,20 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Sidebar } from '@/components/Sidebar'
-import { ApiKeyPrompt } from '@/components/ApiKeyPrompt'
 import { Translator } from '@/views/Translator'
 import { Comparison } from '@/views/Comparison'
 import { Editor } from '@/views/Editor'
 import { TrainingMonitor } from '@/views/TrainingMonitor'
-import { checkBackendOnline, getApiKey } from '@/api/client'
+import { checkBackendOnline } from '@/api/client'
 import { importEpub } from '@/api/epub'
 import { useStore } from '@/store'
 
 function AppShell() {
   const setBackendState = useStore((s) => s.setBackendState)
-  const setApiKeySet = useStore((s) => s.setApiKeySet)
-  const apiKeySet = useStore((s) => s.apiKeySet)
   const setWindowVisible = useStore((s) => s.setWindowVisible)
 
   useEffect(() => {
-    void (async () => {
-      const [online, key] = await Promise.all([
-        checkBackendOnline(),
-        getApiKey(),
-      ])
-      setBackendState(online, null)
-      setApiKeySet(!!key)
-    })()
+    void checkBackendOnline().then((online) => setBackendState(online, null))
 
     const interval = setInterval(() => {
       if (document.hidden) return
@@ -63,7 +53,6 @@ function AppShell() {
     <div className="flex h-screen bg-zinc-950 overflow-hidden">
       <Sidebar />
       <main className="flex-1 overflow-auto relative">
-        <ApiKeyPrompt visible={!apiKeySet} />
         <Routes>
           <Route path="/" element={<Translator />} />
           <Route path="/comparison" element={<Comparison />} />

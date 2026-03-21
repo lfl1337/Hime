@@ -22,6 +22,7 @@ export interface ChapterSummary {
   total_paragraphs: number
   translated_paragraphs: number
   status: 'not_started' | 'in_progress' | 'complete'
+  is_front_matter: boolean
 }
 
 export interface ParagraphInfo {

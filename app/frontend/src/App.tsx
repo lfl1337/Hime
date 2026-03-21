@@ -7,12 +7,14 @@ import { Comparison } from '@/views/Comparison'
 import { Editor } from '@/views/Editor'
 import { TrainingMonitor } from '@/views/TrainingMonitor'
 import { checkBackendOnline, getApiKey } from '@/api/client'
+import { importEpub } from '@/api/epub'
 import { useStore } from '@/store'
 
 function AppShell() {
   const setBackendState = useStore((s) => s.setBackendState)
   const setApiKeySet = useStore((s) => s.setApiKeySet)
   const apiKeySet = useStore((s) => s.apiKeySet)
+  const setWindowVisible = useStore((s) => s.setWindowVisible)
 
   useEffect(() => {
     void (async () => {
@@ -25,10 +27,37 @@ function AppShell() {
     })()
 
     const interval = setInterval(() => {
+      if (document.hidden) return
       void checkBackendOnline().then((online) => setBackendState(online, null))
     }, 30_000)
     return () => clearInterval(interval)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pause polling/SSE when window is hidden
+  useEffect(() => {
+    const handler = () => setWindowVisible(!document.hidden)
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [setWindowVisible])
+
+  // Drag & drop EPUB import
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => { e.preventDefault() }
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault()
+      const file = e.dataTransfer?.files[0]
+      if (file?.name.endsWith('.epub')) {
+        // @ts-expect-error - Electron/Tauri file objects may have .path
+        void importEpub((file as { path?: string }).path ?? file.name)
+      }
+    }
+    window.addEventListener('dragover', handleDragOver)
+    window.addEventListener('drop', handleDrop)
+    return () => {
+      window.removeEventListener('dragover', handleDragOver)
+      window.removeEventListener('drop', handleDrop)
+    }
+  }, [])
 
   return (
     <div className="flex h-screen bg-zinc-950 overflow-hidden">

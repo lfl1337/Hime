@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useStore } from '../store'
 import {
   ComposedChart,
   Line,
@@ -46,12 +47,15 @@ function TrainingStatusBadge({ status }: { status: TrainingStatus['status'] }) {
 
 function useCopyToClipboard(timeout = 2000) {
   const [copied, setCopied] = useState<string | null>(null)
+  const timeoutRef = useRef<number | null>(null)
   const copy = (text: string, key: string) => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
     navigator.clipboard.writeText(text).then(() => {
       setCopied(key)
-      window.setTimeout(() => setCopied(null), timeout)
+      timeoutRef.current = window.setTimeout(() => setCopied(null), timeout)
     })
   }
+  useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current) }, [])
   return { copied, copy }
 }
 
@@ -96,6 +100,8 @@ export function TrainingMonitor() {
   const [sseConnected, setSseConnected] = useState(false)
   const [secondsAgo, setSecondsAgo] = useState(0)
 
+  const isWindowVisible = useStore(s => s.isWindowVisible)
+
   const logEndRef = useRef<HTMLDivElement>(null)
   const esRef = useRef<EventSource | null>(null)
   const fallbackRef = useRef<number | null>(null)
@@ -131,7 +137,7 @@ export function TrainingMonitor() {
 
   // selectedRun effect: load data and connect SSE for the selected run
   useEffect(() => {
-    if (selectedRun === null) return
+    if (selectedRun === null || !isWindowVisible) return
 
     // Close old SSE
     esRef.current?.close()
@@ -163,7 +169,7 @@ export function TrainingMonitor() {
       if (aborted) return
       if (s.status === 'fulfilled') { setStatus(s.value); setLastUpdated(Date.now()) }
       if (cp.status === 'fulfilled') setCheckpoints(cp.value)
-      if (lh.status === 'fulfilled') setLossHistory(lh.value)
+      if (lh.status === 'fulfilled') setLossHistory(lh.value.slice(-1000))
       if (ll.status === 'fulfilled') setLogLines(ll.value)
       setRunLoading(false)
     })
@@ -234,7 +240,7 @@ export function TrainingMonitor() {
         fallbackRef.current = null
       }
     }
-  }, [selectedRun])
+  }, [selectedRun, isWindowVisible])
 
   // "X seconds ago" ticker
   useEffect(() => {

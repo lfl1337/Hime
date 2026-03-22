@@ -20,7 +20,7 @@ from .routers import epub as epub_router
 from .routers import hardware as hardware_router
 from .websocket import streaming
 from .services.epub_service import get_setting, scan_watch_folder
-from .services.hardware_monitor import get_hardware_stats, save_hardware_stats
+from .services.hardware_monitor import cleanup_old_hardware_stats, get_hardware_stats, save_hardware_stats
 
 DEFAULT_WATCH_FOLDER = "C:/Projekte/Hime/data/epubs/"
 
@@ -34,6 +34,7 @@ async def _scan_loop() -> None:
 
 
 async def _hardware_loop() -> None:
+    _cleanup_counter = 0
     while True:
         await asyncio.sleep(5)
         try:
@@ -41,6 +42,13 @@ async def _hardware_loop() -> None:
             await asyncio.to_thread(save_hardware_stats, stats)
         except Exception:
             pass
+        _cleanup_counter += 1
+        if _cleanup_counter >= 720:  # Every hour (720 × 5 s)
+            _cleanup_counter = 0
+            try:
+                await asyncio.to_thread(cleanup_old_hardware_stats)
+            except Exception:
+                pass
 
 
 @asynccontextmanager
@@ -67,7 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="Hime Translation API",
     description="Local-first Japanese-to-English light novel translation",
-    version="0.7.6",
+    version="0.7.7",
     lifespan=lifespan,
 )
 
@@ -117,4 +125,4 @@ app.include_router(streaming.router)  # WebSocket — no /api/v1 prefix
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     """Liveness check — no auth required."""
-    return {"status": "ok", "app": "hime", "version": "0.7.6"}
+    return {"status": "ok", "app": "hime", "version": "0.7.7"}

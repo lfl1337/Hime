@@ -451,6 +451,18 @@ export function TrainingMonitor() {
     return () => clearInterval(id)
   }, [logTab])
 
+  // Sparkline data for hardware history chart — memoized so recharts only
+  // reconciles when hwHistory actually changes, not on every unrelated render.
+  const hwChartData = useMemo(
+    () => hwHistory.map(h => ({
+      t: h.timestamp,
+      vram: h.gpu_vram_pct,
+      gpu: h.gpu_utilization_pct,
+      temp: Math.min(h.gpu_temp_celsius / 90 * 100, 100),
+    })),
+    [hwHistory],
+  )
+
   // Chart data: last 500 train points + all eval points
   const chartData = useMemo(() => {
     const evalSteps = new Set(lossHistory.filter(p => p.eval_loss !== null).map(p => p.step))
@@ -688,12 +700,7 @@ export function TrainingMonitor() {
           <div className="mt-4">
             <ResponsiveContainer width="100%" height={80}>
               <ComposedChart
-                data={hwHistory.map(h => ({
-                  t: h.timestamp,
-                  vram: h.gpu_vram_pct,
-                  gpu: h.gpu_utilization_pct,
-                  temp: Math.min(h.gpu_temp_celsius / 90 * 100, 100),
-                }))}
+                data={hwChartData}
                 margin={{ top: 2, right: 4, bottom: 2, left: 4 }}
               >
                 <Line type="monotone" dataKey="vram" name="VRAM%" stroke="#8b5cf6" dot={false} strokeWidth={1.5} isAnimationActive={false} />

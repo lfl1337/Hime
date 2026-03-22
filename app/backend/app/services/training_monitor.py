@@ -632,13 +632,26 @@ def _write_hw_snapshot_to_log(run_name: str) -> None:
 async def stream_events(run_name: str):
     """Async generator yielding SSE-compatible dicts every 3 seconds."""
     last_line_count = 0
-    last_loss_step = -1
     last_hw_log: float = 0.0
+
+    # Seed last_loss_step from existing history so we don't burst-send
+    # thousands of historical loss points on every new SSE connection.
+    try:
+        _existing = get_loss_history(run_name)
+        last_loss_step = max((p.step for p in _existing), default=-1)
+    except Exception:
+        last_loss_step = -1
+
+    last_status_json: str | None = None
 
     while True:
         try:
             status = get_training_status(run_name)
-            yield {"event": "status", "data": status.model_dump_json()}
+            status_json = status.model_dump_json()
+            # Only send status when it has changed
+            if status_json != last_status_json:
+                yield {"event": "status", "data": status_json}
+                last_status_json = status_json
 
             # Write hardware snapshot to log every 60s during active training
             if status.status == "training":
@@ -655,7 +668,7 @@ async def stream_events(run_name: str):
                 yield {"event": "log_line", "data": json.dumps({"line": line, "type": line_type})}
             last_line_count = len(lines)
 
-            # Emit new loss points since last tick
+            # Emit only new loss points since last tick
             loss_history = get_loss_history(run_name)
             for point in loss_history:
                 if point.step > last_loss_step:

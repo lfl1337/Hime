@@ -66,6 +66,20 @@ function useCopyToClipboard(timeout = 2000) {
 }
 
 // ---------------------------------------------------------------------------
+// useInterval — stable polling hook
+// ---------------------------------------------------------------------------
+
+function useInterval(callback: () => void, delay: number, active = true) {
+  const savedCallback = useRef(callback)
+  useEffect(() => { savedCallback.current = callback }, [callback])
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(() => savedCallback.current(), delay)
+    return () => clearInterval(id)
+  }, [delay, active])
+}
+
+// ---------------------------------------------------------------------------
 // Status dot mapping for run selector pills
 // ---------------------------------------------------------------------------
 
@@ -172,14 +186,21 @@ export function TrainingMonitor() {
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now())
   const [sseConnected, setSseConnected] = useState(false)
   const [secondsAgo, setSecondsAgo] = useState(0)
+  const [hwSecondsAgo, setHwSecondsAgo] = useState<number | null>(null)
 
   // Log tab state
   const [logTab, setLogTab] = useState<'training' | 'backend'>('training')
   const [backendLogLines, setBackendLogLines] = useState<string[]>([])
 
-  // Hardware monitor state — manual refresh only, no automatic polling
+  // Hardware monitor state
   const [hwStats, setHwStats] = useState<HardwareStats | null>(null)
   const [hwRefreshing, setHwRefreshing] = useState(false)
+  const [hwHistory, setHwHistory] = useState<HardwareStats[]>([])
+  const [hwLastUpdated, setHwLastUpdated] = useState<number | null>(null)
+  const [hwError, setHwError] = useState(false)
+
+  // Training model selector
+  const [selectedModelKey, setSelectedModelKey] = useState<string>('qwen32b')
 
   // Log filter state
   const [logFilter, setLogFilter] = useState<'all' | 'loss' | 'progress' | 'hardware' | 'checkpoint' | 'error'>('all')
@@ -308,6 +329,14 @@ export function TrainingMonitor() {
 
       es.addEventListener('status', statusHandler)
 
+      es.addEventListener('loss_history_batch', (e: MessageEvent) => {
+        if (aborted) return
+        try {
+          const points = JSON.parse(e.data) as LossPoint[]
+          setLossHistory(points.slice(-1000))
+        } catch { /* ignore parse errors */ }
+      })
+
       es.onopen = () => {
         if (!aborted) setSseConnected(true)
       }
@@ -355,13 +384,63 @@ export function TrainingMonitor() {
     }
   }, [selectedRun, isWindowVisible])
 
-  // "X seconds ago" ticker
+  // "X seconds ago" tickers — training status + hardware last-updated
   useEffect(() => {
     const id = window.setInterval(() => {
       setSecondsAgo(Math.floor((Date.now() - lastUpdated) / 1000))
     }, 1000)
     return () => clearInterval(id)
   }, [lastUpdated])
+
+  useEffect(() => {
+    if (hwLastUpdated === null) return
+    const id = window.setInterval(() => {
+      setHwSecondsAgo(Math.floor((Date.now() - hwLastUpdated) / 1000))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [hwLastUpdated])
+
+  // Hardware auto-polling every 10s
+  useInterval(
+    () => {
+      getHardwareStats()
+        .then(s => {
+          setHwStats(s)
+          setHwHistory(prev => [...prev.slice(-59), s])
+          setHwLastUpdated(Date.now())
+          setHwError(false)
+        })
+        .catch(() => setHwError(true))
+    },
+    10_000,
+    isWindowVisible,
+  )
+
+  // Memory pressure detection — trim state arrays if JS heap > 500MB
+  useEffect(() => {
+    const check = setInterval(() => {
+      const mem = (performance as any).memory
+      if (!mem) return
+      const usedMB = mem.usedJSHeapSize / 1024 / 1024
+      if (usedMB > 500) {
+        console.warn(`High memory: ${usedMB.toFixed(0)}MB — trimming state`)
+        setLossHistory(prev => prev.slice(-200))
+        setHwHistory(prev => prev.slice(-30))
+        setLogLines(prev => prev.slice(-20))
+      }
+    }, 30_000)
+    return () => clearInterval(check)
+  }, [])
+
+  // Expose debug state to window for Settings memory profiler
+  useEffect(() => {
+    ;(window as any).__himeDebug = {
+      lossHistoryLength: lossHistory.length,
+      hwHistoryLength: hwHistory.length,
+      logLinesLength: logLines.length,
+      backendLogLinesLength: backendLogLines.length,
+    }
+  }, [lossHistory.length, hwHistory.length, logLines.length, backendLogLines.length])
 
   // Auto-scroll log
   useEffect(() => {
@@ -386,6 +465,7 @@ export function TrainingMonitor() {
 
   const bestCp = checkpoints.find(c => c.is_best) ?? checkpoints.find(c => c.is_last) ?? null
 
+
   // Running process for selected run
   const runningProcess = selectedRun
     ? runningProcesses.find(p => p.model_name === selectedRun) ?? null
@@ -401,6 +481,7 @@ export function TrainingMonitor() {
         resume_checkpoint: selectedCheckpoint,
         epochs: trainingEpochs,
         conda_env: condaEnv,
+        model_key: selectedModelKey,
       })
       const procs = await getRunningProcesses()
       setRunningProcesses(procs)
@@ -547,21 +628,39 @@ export function TrainingMonitor() {
       </div>
 
       {/* Hardware Monitor */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-zinc-400">Hardware</h3>
+      <div className={`rounded-xl border bg-zinc-900 p-5 transition-colors ${hwError ? 'border-zinc-700' : 'border-zinc-800'}`}>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium text-zinc-400">Hardware</h3>
+            <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">
+              {hwError ? 'Error — retrying' : 'Polling every 10s'}
+            </span>
+            {hwSecondsAgo !== null && (
+              <span className="text-xs text-zinc-600">
+                Updated {hwSecondsAgo}s ago
+              </span>
+            )}
+          </div>
           <button
             onClick={() => {
               setHwRefreshing(true)
-              getHardwareStats().then(s => setHwStats(s)).catch(() => {}).finally(() => setHwRefreshing(false))
+              getHardwareStats()
+                .then(s => {
+                  setHwStats(s)
+                  setHwHistory(prev => [...prev.slice(-59), s])
+                  setHwLastUpdated(Date.now())
+                  setHwError(false)
+                })
+                .catch(() => setHwError(true))
+                .finally(() => setHwRefreshing(false))
             }}
             disabled={hwRefreshing}
             className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
           >
-            {hwRefreshing ? 'Refreshing…' : 'Refresh'}
+            {hwRefreshing ? 'Refreshing…' : 'Refresh now'}
           </button>
         </div>
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+        <div className={`grid grid-cols-3 gap-3 sm:grid-cols-6 transition-opacity ${hwError ? 'opacity-50' : 'opacity-100'}`}>
           <HwCard
             label="VRAM"
             value={hwStats
@@ -611,6 +710,35 @@ export function TrainingMonitor() {
             barColor="bg-zinc-400"
           />
         </div>
+
+        {/* HW History Chart */}
+        {hwHistory.length > 1 && (
+          <div className="mt-4">
+            <div className="text-xs text-zinc-600 mb-1">Last {hwHistory.length} samples</div>
+            <ResponsiveContainer width="100%" height={120}>
+              <ComposedChart data={hwHistory} margin={{ top: 2, right: 8, bottom: 2, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                <XAxis dataKey="timestamp" hide />
+                <YAxis domain={[0, 100]} width={28} tick={{ fill: '#71717a', fontSize: 10 }} />
+                <Tooltip
+                  contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8 }}
+                  labelStyle={{ color: '#a1a1aa' }}
+                  itemStyle={{ color: '#e4e4e7' }}
+                  formatter={(value: unknown) => [`${(value as number).toFixed(1)}%`]}
+                  labelFormatter={() => ''}
+                />
+                <Line dataKey="gpu_vram_pct" stroke="#8b5cf6" dot={false} name="VRAM%" isAnimationActive={false} />
+                <Line dataKey="gpu_utilization_pct" stroke="#22c55e" dot={false} name="GPU%" isAnimationActive={false} />
+                <Line dataKey="ram_pct" stroke="#f59e0b" dot={false} name="RAM%" isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+            <div className="flex gap-4 mt-1 text-xs text-zinc-600">
+              <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-violet-500 inline-block" />VRAM%</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-green-500 inline-block" />GPU%</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-yellow-500 inline-block" />RAM%</span>
+            </div>
+          </div>
+        )}
 
       </div>
 
@@ -704,6 +832,30 @@ export function TrainingMonitor() {
                       className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
                     />
                   )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Model</label>
+                <div className="flex gap-1 flex-wrap">
+                  {[
+                    { key: 'qwen32b', label: 'Qwen2.5-32B' },
+                    { key: 'qwen14b', label: 'Qwen2.5-14B' },
+                    { key: 'qwen72b', label: 'Qwen2.5-72B' },
+                    { key: 'gemma27b', label: 'Gemma 3-27B' },
+                    { key: 'deepseek', label: 'DeepSeek-R1-32B' },
+                  ].map(opt => (
+                    <button
+                      key={opt.key}
+                      onClick={() => setSelectedModelKey(opt.key)}
+                      className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
+                        selectedModelKey === opt.key
+                          ? 'bg-violet-700 text-white'
+                          : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               <button

@@ -630,8 +630,14 @@ def _write_hw_snapshot_to_log(run_name: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def stream_events(run_name: str):
-    """Async generator — emits 'status' events every 30 seconds, only when changed.
-    Log lines and loss points are no longer streamed; fetch them on demand via REST."""
+    """Async generator — emits 'loss_history_batch' on connect, then 'status' events every 30 seconds."""
+    # Send full loss history on initial connect so frontend can skip separate HTTP call
+    try:
+        history = get_loss_history(run_name)
+        yield {"event": "loss_history_batch", "data": json.dumps([p.model_dump() for p in history])}
+    except Exception:
+        pass
+
     last_status_json: str | None = None
 
     while True:

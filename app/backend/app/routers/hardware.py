@@ -7,8 +7,10 @@ from fastapi.responses import StreamingResponse
 
 from ..services.hardware_monitor import (
     HardwareStats,
+    MemoryDetail,
     get_hardware_history,
     get_hardware_stats,
+    get_memory_detail,
 )
 
 router = APIRouter(prefix="/hardware", tags=["hardware"])
@@ -26,6 +28,12 @@ async def hardware_history(
 ) -> list[HardwareStats]:
     """Hardware stats history for the last N minutes (from SQLite)."""
     return await asyncio.to_thread(get_hardware_history, minutes)
+
+
+@router.get("/memory-detail", response_model=MemoryDetail)
+async def memory_detail() -> MemoryDetail:
+    """Detailed memory breakdown: Python process RSS/VMS, system RAM, pagefile, top processes."""
+    return await asyncio.to_thread(get_memory_detail)
 
 
 @router.get("/stream")

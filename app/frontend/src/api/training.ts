@@ -82,6 +82,7 @@ export interface StartTrainingParams {
   resume_checkpoint: string | null
   epochs: number
   conda_env: string
+  model_key?: string  // 'qwen32b' | 'qwen14b' | 'qwen72b' | 'gemma27b' | 'deepseek'
 }
 
 function runQuery(run?: string): string {
@@ -230,6 +231,24 @@ export interface HardwareStats {
   ram_pct: number
   disk_read_mb_s: number
   disk_write_mb_s: number
+}
+
+export interface MemoryDetail {
+  process_rss_mb: number
+  process_vms_mb: number
+  system_total_gb: number
+  system_available_gb: number
+  system_used_pct: number
+  pagefile_total_gb: number
+  pagefile_used_gb: number
+  pagefile_used_pct: number
+  top_processes: Array<{ name: string; pid: number; rss_mb: number }>
+}
+
+export async function getMemoryDetail(): Promise<MemoryDetail> {
+  const res = await apiFetch('/api/v1/hardware/memory-detail')
+  if (!res.ok) throw new Error(`hardware/memory-detail failed: ${res.statusText}`)
+  return res.json() as Promise<MemoryDetail>
 }
 
 export async function getHardwareStats(): Promise<HardwareStats> {

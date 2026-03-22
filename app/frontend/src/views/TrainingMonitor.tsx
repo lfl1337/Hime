@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import {
   ComposedChart,
@@ -127,7 +127,7 @@ interface HwCardProps {
   barColor: string
 }
 
-function HwCard({ label, value, sub, pct, barColor }: HwCardProps) {
+const HwCard = memo(function HwCard({ label, value, sub, pct, barColor }: HwCardProps) {
   const clamped = Math.min(Math.max(pct, 0), 100)
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 flex flex-col gap-1.5">
@@ -142,7 +142,7 @@ function HwCard({ label, value, sub, pct, barColor }: HwCardProps) {
       </div>
     </div>
   )
-}
+})
 
 function gpuUtilColor(pct: number): string {
   if (pct >= 71) return 'bg-green-500'
@@ -244,7 +244,7 @@ export function TrainingMonitor() {
     let cancelled = false
 
     getHardwareStats().then(s => { if (!cancelled) setHwStats(s) }).catch(() => {})
-    getHardwareHistory(10).then(h => { if (!cancelled) setHwHistory(h) }).catch(() => {})
+    getHardwareHistory(10).then(h => { if (!cancelled) setHwHistory(h.slice(-120)) }).catch(() => {})
 
     const hwHandler = (e: MessageEvent<string>) => {
       try {
@@ -327,6 +327,40 @@ export function TrainingMonitor() {
       setRunLoading(false)
     })
 
+    // Named handlers defined in effect scope so both the promise callback
+    // and the cleanup function can reference the same function instances.
+    const statusHandler = (e: MessageEvent<string>) => {
+      if (aborted) return
+      try {
+        const s = JSON.parse(e.data) as TrainingStatus
+        setStatus(s)
+        setLastUpdated(Date.now())
+      } catch { /* ignore parse errors */ }
+    }
+
+    const logHandler = (e: MessageEvent<string>) => {
+      if (aborted) return
+      try {
+        const parsed = JSON.parse(e.data) as { line: string; type?: string }
+        const entry = { line: parsed.line, type: parsed.type ?? 'info' }
+        setLogLines(prev => {
+          const next = [...prev, entry]
+          return next.length > 100 ? next.slice(-100) : next
+        })
+      } catch { /* ignore */ }
+    }
+
+    const lossHandler = (e: MessageEvent<string>) => {
+      if (aborted) return
+      try {
+        const point = JSON.parse(e.data) as LossPoint
+        setLossHistory(prev => {
+          const next = [...prev, point]
+          return next.length > 1000 ? next.slice(-1000) : next
+        })
+      } catch { /* ignore */ }
+    }
+
     // Connect SSE
     createTrainingEventSource(selectedRun).then(es => {
       if (aborted) {
@@ -335,37 +369,9 @@ export function TrainingMonitor() {
       }
       esRef.current = es
 
-      es.addEventListener('status', (e: MessageEvent<string>) => {
-        if (aborted) return
-        try {
-          const s = JSON.parse(e.data) as TrainingStatus
-          setStatus(s)
-          setLastUpdated(Date.now())
-        } catch { /* ignore parse errors */ }
-      })
-
-      es.addEventListener('log_line', (e: MessageEvent<string>) => {
-        if (aborted) return
-        try {
-          const parsed = JSON.parse(e.data) as { line: string; type?: string }
-          const entry = { line: parsed.line, type: parsed.type ?? 'info' }
-          setLogLines(prev => {
-            const next = [...prev, entry]
-            return next.length > 100 ? next.slice(-100) : next
-          })
-        } catch { /* ignore */ }
-      })
-
-      es.addEventListener('loss_point', (e: MessageEvent<string>) => {
-        if (aborted) return
-        try {
-          const point = JSON.parse(e.data) as LossPoint
-          setLossHistory(prev => {
-            const next = [...prev, point]
-            return next.length > 1000 ? next.slice(-1000) : next
-          })
-        } catch { /* ignore */ }
-      })
+      es.addEventListener('status',     statusHandler)
+      es.addEventListener('log_line',   logHandler)
+      es.addEventListener('loss_point', lossHandler)
 
       es.onopen = () => {
         if (!aborted) setSseConnected(true)
@@ -374,6 +380,11 @@ export function TrainingMonitor() {
       es.onerror = () => {
         if (aborted) return
         setSseConnected(false)
+        es.removeEventListener('status',     statusHandler)
+        es.removeEventListener('log_line',   logHandler)
+        es.removeEventListener('loss_point', lossHandler)
+        es.onopen  = null
+        es.onerror = null
         es.close()
         esRef.current = null
         // Fallback: poll every 5s using selectedRunRef to get current run
@@ -398,8 +409,15 @@ export function TrainingMonitor() {
 
     return () => {
       aborted = true
-      esRef.current?.close()
-      esRef.current = null
+      if (esRef.current) {
+        esRef.current.removeEventListener('status',     statusHandler)
+        esRef.current.removeEventListener('log_line',   logHandler)
+        esRef.current.removeEventListener('loss_point', lossHandler)
+        esRef.current.onopen  = null
+        esRef.current.onerror = null
+        esRef.current.close()
+        esRef.current = null
+      }
       if (fallbackRef.current !== null) {
         clearInterval(fallbackRef.current)
         fallbackRef.current = null
@@ -427,7 +445,7 @@ export function TrainingMonitor() {
   // Poll backend log every 5s when the backend tab is active
   useEffect(() => {
     if (logTab !== 'backend') return
-    const load = () => getBackendLog(50).then(d => setBackendLogLines(d.lines)).catch(() => {})
+    const load = () => getBackendLog(50).then(d => setBackendLogLines(d.lines.slice(-50))).catch(() => {})
     void load()
     const id = setInterval(load, 5000)
     return () => clearInterval(id)

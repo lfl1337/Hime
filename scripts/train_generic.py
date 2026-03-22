@@ -38,28 +38,33 @@ from trl import SFTTrainer
 
 MODEL_CONFIGS = {
     'qwen32b': {
-        'model': 'unsloth/Qwen2.5-32B-Instruct-bnb-4bit',
-        'max_seq': 1024,
+        'model':    'unsloth/Qwen2.5-32B-Instruct-bnb-4bit',
+        'lora_dir': 'Qwen2.5-32B-Instruct',
+        'max_seq':  1024,
         'grad_accum': 16,
     },
     'qwen14b': {
-        'model': 'unsloth/Qwen2.5-14B-Instruct-bnb-4bit',
-        'max_seq': 1024,
+        'model':    'unsloth/Qwen2.5-14B-Instruct-bnb-4bit',
+        'lora_dir': 'Qwen2.5-14B-Instruct',
+        'max_seq':  1024,
         'grad_accum': 16,
     },
     'qwen72b': {
-        'model': 'unsloth/Qwen2.5-72B-Instruct-bnb-4bit',
-        'max_seq': 512,
+        'model':    'unsloth/Qwen2.5-72B-Instruct-bnb-4bit',
+        'lora_dir': 'Qwen2.5-72B-Instruct',
+        'max_seq':  512,
         'grad_accum': 32,
     },
     'gemma27b': {
-        'model': 'unsloth/gemma-3-27b-it-bnb-4bit',
-        'max_seq': 1024,
+        'model':    'unsloth/gemma-3-27b-it-bnb-4bit',
+        'lora_dir': 'Gemma-3-27B-IT',
+        'max_seq':  1024,
         'grad_accum': 16,
     },
     'deepseek': {
-        'model': 'unsloth/DeepSeek-R1-Distill-Qwen-32B-bnb-4bit',
-        'max_seq': 1024,
+        'model':    'unsloth/DeepSeek-R1-Distill-Qwen-32B-bnb-4bit',
+        'lora_dir': 'DeepSeek-R1-Distill-Qwen-32B',
+        'max_seq':  1024,
         'grad_accum': 16,
     },
 }
@@ -325,11 +330,12 @@ def main():
     if args.rank:
         LORA_RANK = args.rank
 
-    # Derive adapter name
+    # Derive adapter name — use explicit lora_dir from config so directories
+    # always match what training_runner.py and the frontend expect
     if args.run_name:
         adapter_name = args.run_name
     else:
-        adapter_name = model_hf_name.split("/")[-1].replace("-bnb-4bit", "")
+        adapter_name = cfg.get('lora_dir', model_hf_name.split("/")[-1].replace("-bnb-4bit", ""))
 
     if args.output_dir:
         output_dir = Path(args.output_dir)

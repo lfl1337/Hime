@@ -169,6 +169,18 @@ function tempColor(celsius: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Model → LoRA output directory mapping
+// ---------------------------------------------------------------------------
+
+const MODEL_TO_LORA_DIR: Record<string, string> = {
+  qwen32b:  'Qwen2.5-32B-Instruct',
+  qwen14b:  'Qwen2.5-14B-Instruct',
+  qwen72b:  'Qwen2.5-72B-Instruct',
+  gemma27b: 'Gemma-3-27B-IT',
+  deepseek: 'DeepSeek-R1-Distill-Qwen-32B',
+}
+
+// ---------------------------------------------------------------------------
 // TrainingMonitor
 // ---------------------------------------------------------------------------
 
@@ -199,8 +211,9 @@ export function TrainingMonitor() {
   const [hwLastUpdated, setHwLastUpdated] = useState<number | null>(null)
   const [hwError, setHwError] = useState(false)
 
-  // Training model selector
+  // Training model selector + per-model checkpoints
   const [selectedModelKey, setSelectedModelKey] = useState<string>('qwen32b')
+  const [modelCheckpoints, setModelCheckpoints] = useState<CheckpointInfo[]>([])
 
   // Log filter state
   const [logFilter, setLogFilter] = useState<'all' | 'loss' | 'progress' | 'hardware' | 'checkpoint' | 'error'>('all')
@@ -260,15 +273,23 @@ export function TrainingMonitor() {
     selectedRunRef.current = selectedRun
   }, [selectedRun])
 
-  // Auto-select checkpoint when checkpoints load, respecting stored preference
+  // Fetch checkpoints for the selected training model when model key changes
   useEffect(() => {
-    if (checkpoints.length === 0) { setSelectedCheckpoint(null); return }
-    const pref = localStorage.getItem('hime_default_checkpoint') ?? 'best'
-    const chosen = pref === 'latest'
-      ? (checkpoints.filter(c => !c.is_interrupted).sort((a, b) => b.step - a.step)[0] ?? null)
-      : (checkpoints.find(c => c.is_best) ?? checkpoints.find(c => c.is_last) ?? null)
-    setSelectedCheckpoint(chosen ? chosen.name : null)
-  }, [checkpoints])
+    const loraDir = MODEL_TO_LORA_DIR[selectedModelKey]
+    if (!loraDir) return
+    getCheckpoints(loraDir)
+      .then(cps => {
+        setModelCheckpoints(cps)
+        // Auto-select based on stored preference
+        const pref = localStorage.getItem('hime_default_checkpoint') ?? 'best'
+        const valid = cps.filter(c => !c.is_interrupted)
+        const chosen = pref === 'latest'
+          ? (valid.sort((a, b) => b.step - a.step)[0] ?? null)
+          : (valid.find(c => c.is_best) ?? valid.find(c => c.is_last) ?? null)
+        setSelectedCheckpoint(chosen ? chosen.name : null)
+      })
+      .catch(() => { setModelCheckpoints([]); setSelectedCheckpoint(null) })
+  }, [selectedModelKey])
 
   // selectedRun effect: load data and connect SSE for the selected run
   useEffect(() => {
@@ -475,9 +496,10 @@ export function TrainingMonitor() {
     if (!selectedRun) return
     setControlLoading(true)
     setControlError(null)
+    const trainingModelName = MODEL_TO_LORA_DIR[selectedModelKey] ?? selectedRun
     try {
       await startTraining({
-        model_name: selectedRun,
+        model_name: trainingModelName,
         resume_checkpoint: selectedCheckpoint,
         epochs: trainingEpochs,
         conda_env: condaEnv,
@@ -785,21 +807,30 @@ export function TrainingMonitor() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
-                  <label className="block text-xs text-zinc-500 mb-1">Resume from checkpoint</label>
-                  <select
-                    value={selectedCheckpoint ?? ''}
-                    onChange={e => setSelectedCheckpoint(e.target.value || null)}
-                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
-                  >
-                    <option value="">Fresh start</option>
-                    {checkpoints.filter(c => !c.is_interrupted).map(cp => (
-                      <option key={cp.name} value={cp.name}>
-                        {cp.name}
-                        {cp.is_best ? ' (best)' : ''}
-                        {cp.is_last ? ' (last)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="block text-xs text-zinc-500 mb-1">
+                    Resume from checkpoint
+                    <span className="ml-1 text-zinc-600">({MODEL_TO_LORA_DIR[selectedModelKey]})</span>
+                  </label>
+                  {modelCheckpoints.filter(c => !c.is_interrupted).length === 0 ? (
+                    <div className="w-full bg-zinc-800 border border-zinc-700 text-zinc-600 text-xs rounded-lg px-3 py-2">
+                      No checkpoints — will start fresh
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedCheckpoint ?? ''}
+                      onChange={e => setSelectedCheckpoint(e.target.value || null)}
+                      className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                    >
+                      <option value="">Fresh start</option>
+                      {modelCheckpoints.filter(c => !c.is_interrupted).map(cp => (
+                        <option key={cp.name} value={cp.name}>
+                          {cp.name}
+                          {cp.is_best ? ' (best)' : ''}
+                          {cp.is_last ? ' (last)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-zinc-500 mb-1">Epochs</label>

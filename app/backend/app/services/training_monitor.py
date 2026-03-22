@@ -630,50 +630,17 @@ def _write_hw_snapshot_to_log(run_name: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def stream_events(run_name: str):
-    """Async generator yielding SSE-compatible dicts every 3 seconds."""
-    last_line_count = 0
-    last_hw_log: float = 0.0
-
-    # Seed last_loss_step from existing history so we don't burst-send
-    # thousands of historical loss points on every new SSE connection.
-    try:
-        _existing = get_loss_history(run_name)
-        last_loss_step = max((p.step for p in _existing), default=-1)
-    except Exception:
-        last_loss_step = -1
-
+    """Async generator — emits 'status' events every 30 seconds, only when changed.
+    Log lines and loss points are no longer streamed; fetch them on demand via REST."""
     last_status_json: str | None = None
 
     while True:
         try:
             status = get_training_status(run_name)
             status_json = status.model_dump_json()
-            # Only send status when it has changed
             if status_json != last_status_json:
                 yield {"event": "status", "data": status_json}
                 last_status_json = status_json
-
-            # Write hardware snapshot to log every 60s during active training
-            if status.status == "training":
-                now = time.time()
-                if now - last_hw_log >= 60:
-                    await asyncio.to_thread(_write_hw_snapshot_to_log, run_name)
-                    last_hw_log = now
-
-            lines = get_log_tail(run_name, 100)
-            if len(lines) < last_line_count:  # log rotation
-                last_line_count = 0
-            for line in lines[last_line_count:]:
-                line_type = _classify_log_line(line)
-                yield {"event": "log_line", "data": json.dumps({"line": line, "type": line_type})}
-            last_line_count = len(lines)
-
-            # Emit only new loss points since last tick
-            loss_history = get_loss_history(run_name)
-            for point in loss_history:
-                if point.step > last_loss_step:
-                    yield {"event": "loss_point", "data": point.model_dump_json()}
-                    last_loss_step = point.step
         except Exception:
             pass  # Never crash the SSE stream
-        await asyncio.sleep(3)
+        await asyncio.sleep(30)

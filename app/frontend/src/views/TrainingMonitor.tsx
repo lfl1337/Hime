@@ -11,14 +11,12 @@ import {
 } from 'recharts'
 import type { CheckpointInfo, GGUFModelInfo, HardwareStats, LossPoint, RunInfo, TrainingProcess, TrainingStatus } from '../api/training'
 import {
-  createHardwareEventSource,
   createTrainingEventSource,
   fetchAllRuns,
   fetchGGUFModels,
   getBackendLog,
   getCondaEnvs,
   getCheckpoints,
-  getHardwareHistory,
   getHardwareStats,
   getLossHistory,
   getRunningProcesses,
@@ -179,10 +177,9 @@ export function TrainingMonitor() {
   const [logTab, setLogTab] = useState<'training' | 'backend'>('training')
   const [backendLogLines, setBackendLogLines] = useState<string[]>([])
 
-  // Hardware monitor state
+  // Hardware monitor state — manual refresh only, no automatic polling
   const [hwStats, setHwStats] = useState<HardwareStats | null>(null)
-  const [hwHistory, setHwHistory] = useState<HardwareStats[]>([])
-  const hwEsRef = useRef<EventSource | null>(null)
+  const [hwRefreshing, setHwRefreshing] = useState(false)
 
   // Log filter state
   const [logFilter, setLogFilter] = useState<'all' | 'loss' | 'progress' | 'hardware' | 'checkpoint' | 'error'>('all')
@@ -236,42 +233,6 @@ export function TrainingMonitor() {
 
     return () => clearTimeout(timeoutId)
   }, [])
-
-  // Hardware SSE — pauses when window is hidden, resumes on restore
-  useEffect(() => {
-    if (!isWindowVisible) return
-
-    let cancelled = false
-
-    getHardwareStats().then(s => { if (!cancelled) setHwStats(s) }).catch(() => {})
-    getHardwareHistory(10).then(h => { if (!cancelled) setHwHistory(h.slice(-120)) }).catch(() => {})
-
-    const hwHandler = (e: MessageEvent<string>) => {
-      try {
-        const stats = JSON.parse(e.data) as HardwareStats
-        setHwStats(stats)
-        setHwHistory(prev => {
-          const next = [...prev, stats]
-          return next.length > 120 ? next.slice(-120) : next
-        })
-      } catch { /* ignore */ }
-    }
-
-    createHardwareEventSource().then(es => {
-      if (cancelled) { es.close(); return }
-      hwEsRef.current = es
-      es.addEventListener('hardware_stats', hwHandler)
-    }).catch(() => {})
-
-    return () => {
-      cancelled = true
-      if (hwEsRef.current) {
-        hwEsRef.current.removeEventListener('hardware_stats', hwHandler)
-        hwEsRef.current.close()
-        hwEsRef.current = null
-      }
-    }
-  }, [isWindowVisible])
 
   // Keep selectedRunRef in sync with selectedRun
   useEffect(() => {
@@ -327,8 +288,7 @@ export function TrainingMonitor() {
       setRunLoading(false)
     })
 
-    // Named handlers defined in effect scope so both the promise callback
-    // and the cleanup function can reference the same function instances.
+    // Status-only SSE handler — log/loss events removed (fetch on demand)
     const statusHandler = (e: MessageEvent<string>) => {
       if (aborted) return
       try {
@@ -336,29 +296,6 @@ export function TrainingMonitor() {
         setStatus(s)
         setLastUpdated(Date.now())
       } catch { /* ignore parse errors */ }
-    }
-
-    const logHandler = (e: MessageEvent<string>) => {
-      if (aborted) return
-      try {
-        const parsed = JSON.parse(e.data) as { line: string; type?: string }
-        const entry = { line: parsed.line, type: parsed.type ?? 'info' }
-        setLogLines(prev => {
-          const next = [...prev, entry]
-          return next.length > 100 ? next.slice(-100) : next
-        })
-      } catch { /* ignore */ }
-    }
-
-    const lossHandler = (e: MessageEvent<string>) => {
-      if (aborted) return
-      try {
-        const point = JSON.parse(e.data) as LossPoint
-        setLossHistory(prev => {
-          const next = [...prev, point]
-          return next.length > 1000 ? next.slice(-1000) : next
-        })
-      } catch { /* ignore */ }
     }
 
     // Connect SSE
@@ -369,9 +306,7 @@ export function TrainingMonitor() {
       }
       esRef.current = es
 
-      es.addEventListener('status',     statusHandler)
-      es.addEventListener('log_line',   logHandler)
-      es.addEventListener('loss_point', lossHandler)
+      es.addEventListener('status', statusHandler)
 
       es.onopen = () => {
         if (!aborted) setSseConnected(true)
@@ -380,27 +315,20 @@ export function TrainingMonitor() {
       es.onerror = () => {
         if (aborted) return
         setSseConnected(false)
-        es.removeEventListener('status',     statusHandler)
-        es.removeEventListener('log_line',   logHandler)
-        es.removeEventListener('loss_point', lossHandler)
+        es.removeEventListener('status', statusHandler)
         es.onopen  = null
         es.onerror = null
         es.close()
         esRef.current = null
-        // Fallback: poll every 5s using selectedRunRef to get current run
+        // Fallback: poll status every 30s
         if (fallbackRef.current === null) {
           fallbackRef.current = window.setInterval(() => {
             const currentRun = selectedRunRef.current
             if (currentRun === null) return
-            Promise.allSettled([
-              getTrainingStatus(currentRun),
-              getTrainingLog(20, currentRun),
-            ]).then(([s, ll]) => {
-              if (aborted) return
-              if (s.status === 'fulfilled') { setStatus(s.value); setLastUpdated(Date.now()) }
-              if (ll.status === 'fulfilled') setLogLines(ll.value.map(line => ({ line, type: 'info' })))
-            })
-          }, 5000)
+            getTrainingStatus(currentRun).then(s => {
+              if (!aborted) { setStatus(s); setLastUpdated(Date.now()) }
+            }).catch(() => {})
+          }, 30_000)
         }
       }
     }).catch(() => {
@@ -410,9 +338,7 @@ export function TrainingMonitor() {
     return () => {
       aborted = true
       if (esRef.current) {
-        esRef.current.removeEventListener('status',     statusHandler)
-        esRef.current.removeEventListener('log_line',   logHandler)
-        esRef.current.removeEventListener('loss_point', lossHandler)
+        esRef.current.removeEventListener('status', statusHandler)
         esRef.current.onopen  = null
         esRef.current.onerror = null
         esRef.current.close()
@@ -441,27 +367,6 @@ export function TrainingMonitor() {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logLines])
-
-  // Poll backend log every 5s when the backend tab is active
-  useEffect(() => {
-    if (logTab !== 'backend') return
-    const load = () => getBackendLog(50).then(d => setBackendLogLines(d.lines.slice(-50))).catch(() => {})
-    void load()
-    const id = setInterval(load, 5000)
-    return () => clearInterval(id)
-  }, [logTab])
-
-  // Sparkline data for hardware history chart — memoized so recharts only
-  // reconciles when hwHistory actually changes, not on every unrelated render.
-  const hwChartData = useMemo(
-    () => hwHistory.map(h => ({
-      t: h.timestamp,
-      vram: h.gpu_vram_pct,
-      gpu: h.gpu_utilization_pct,
-      temp: Math.min(h.gpu_temp_celsius / 90 * 100, 100),
-    })),
-    [hwHistory],
-  )
 
   // Chart data: last 500 train points + all eval points
   const chartData = useMemo(() => {
@@ -643,7 +548,19 @@ export function TrainingMonitor() {
 
       {/* Hardware Monitor */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-        <h3 className="text-sm font-medium text-zinc-400 mb-3">Hardware</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-zinc-400">Hardware</h3>
+          <button
+            onClick={() => {
+              setHwRefreshing(true)
+              getHardwareStats().then(s => setHwStats(s)).catch(() => {}).finally(() => setHwRefreshing(false))
+            }}
+            disabled={hwRefreshing}
+            className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
+          >
+            {hwRefreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
           <HwCard
             label="VRAM"
@@ -695,26 +612,6 @@ export function TrainingMonitor() {
           />
         </div>
 
-        {/* Sparkline chart: VRAM%, GPU%, Temp% over last 10 minutes */}
-        {hwHistory.length > 1 && (
-          <div className="mt-4">
-            <ResponsiveContainer width="100%" height={80}>
-              <ComposedChart
-                data={hwChartData}
-                margin={{ top: 2, right: 4, bottom: 2, left: 4 }}
-              >
-                <Line type="monotone" dataKey="vram" name="VRAM%" stroke="#8b5cf6" dot={false} strokeWidth={1.5} isAnimationActive={false} />
-                <Line type="monotone" dataKey="gpu" name="GPU%" stroke="#22c55e" dot={false} strokeWidth={1.5} isAnimationActive={false} />
-                <Line type="monotone" dataKey="temp" name="Temp%" stroke="#f97316" dot={false} strokeWidth={1.5} isAnimationActive={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-            <div className="flex gap-4 mt-1 text-xs text-zinc-600">
-              <span><span className="text-violet-500">■</span> VRAM%</span>
-              <span><span className="text-green-500">■</span> GPU%</span>
-              <span><span className="text-orange-500">■</span> Temp%</span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Content: fades when switching runs */}
@@ -1037,8 +934,23 @@ export function TrainingMonitor() {
                 {t === 'training' ? 'Training Log' : 'Backend Log'}
               </button>
             ))}
+            {/* Manual refresh — no automatic polling */}
+            <button
+              onClick={() => {
+                if (logTab === 'training' && selectedRun) {
+                  getTrainingLog(20, selectedRun)
+                    .then(lines => setLogLines(lines.map(l => ({ line: l, type: 'info' }))))
+                    .catch(() => {})
+                } else if (logTab === 'backend') {
+                  getBackendLog(50).then(d => setBackendLogLines(d.lines.slice(-50))).catch(() => {})
+                }
+              }}
+              className="ml-auto text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Refresh Log
+            </button>
             {logTab === 'training' && (
-              <div className="flex items-center gap-1 ml-2 flex-wrap">
+              <div className="flex items-center gap-1 flex-wrap">
                 {(['all', 'loss', 'progress', 'hardware', 'checkpoint', 'error'] as const).map(f => (
                   <button
                     key={f}

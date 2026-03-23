@@ -38,7 +38,10 @@ function AppShell() {
 
   // Pause polling/SSE when window is hidden
   useEffect(() => {
-    const handler = () => setWindowVisible(!document.hidden)
+    const handler = () => {
+      console.log('[App] visibilitychange:', document.visibilityState)
+      setWindowVisible(!document.hidden)
+    }
     document.addEventListener('visibilitychange', handler)
     return () => document.removeEventListener('visibilitychange', handler)
   }, [setWindowVisible])

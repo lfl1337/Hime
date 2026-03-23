@@ -34,13 +34,17 @@ export function Sidebar() {
 
   useEffect(() => {
     if (!isWindowVisible) return
+    console.log('[Sidebar] process-check interval start (30s)')
     const check = () =>
       getRunningProcesses()
         .then(procs => setTrainingRun(procs[0]?.model_name ?? null))
         .catch(() => {})
     void check()
     const id = setInterval(check, 30_000)
-    return () => clearInterval(id)
+    return () => {
+      console.log('[Sidebar] process-check interval stop')
+      clearInterval(id)
+    }
   }, [isWindowVisible])
 
   return (
@@ -130,7 +134,7 @@ export function Sidebar() {
           <div className="flex flex-col gap-1">
             <span className="text-xs text-zinc-600">Backend</span>
             <StatusBadge online={backendOnline} />
-            <p className="mt-1 text-xs text-zinc-600">Hime v0.9.5</p>
+            <p className="mt-1 text-xs text-zinc-600">Hime v0.9.6</p>
           </div>
         )}
       </div>

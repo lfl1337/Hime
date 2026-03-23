@@ -26,6 +26,32 @@ import {
 } from '../api/training'
 
 // ---------------------------------------------------------------------------
+// Module-level log entry ID counter — gives each log line a stable React key
+// ---------------------------------------------------------------------------
+
+let _nextLogId = 0
+
+// ---------------------------------------------------------------------------
+// Stable Tooltip/Axis objects — defined outside component so React never sees
+// a "new" reference on re-render, preventing unnecessary recharts repaints
+// ---------------------------------------------------------------------------
+
+const TOOLTIP_CONTENT_STYLE = { background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8 } as const
+const TOOLTIP_LABEL_STYLE    = { color: '#a1a1aa' } as const
+const TOOLTIP_ITEM_STYLE     = { color: '#e4e4e7' } as const
+const AXIS_TICK_SM           = { fill: '#71717a', fontSize: 10 } as const
+const AXIS_TICK_LG           = { fill: '#71717a', fontSize: 11 } as const
+const LOSS_CHART_MARGIN      = { top: 4, right: 16, bottom: 4, left: 0 } as const
+const HW_CHART_MARGIN        = { top: 2, right: 8,  bottom: 2, left: 0 } as const
+
+function fmtLoss(value: unknown): [string] { return [(value as number).toFixed(4)] }
+function fmtLossLabel(v: unknown): string  { return `Step ${(v as number).toLocaleString()}` }
+function fmtPct(value: unknown): [string]  { return [`${(value as number).toFixed(1)}%`] }
+function fmtEmpty(): string                { return '' }
+function fmtStep(v: unknown): string       { return (v as number).toLocaleString() }
+function fmtLossAxis(v: unknown): string   { return (v as number).toFixed(2) }
+
+// ---------------------------------------------------------------------------
 // TrainingStatusBadge
 // ---------------------------------------------------------------------------
 
@@ -68,14 +94,18 @@ function useCopyToClipboard(timeout = 2000) {
 // useInterval — stable polling hook
 // ---------------------------------------------------------------------------
 
-function useInterval(callback: () => void, delay: number, active = true) {
+function useInterval(callback: () => void, delay: number, active = true, label?: string) {
   const savedCallback = useRef(callback)
   useEffect(() => { savedCallback.current = callback }, [callback])
   useEffect(() => {
     if (!active) return
+    if (label) console.log(`[${label}] interval start (${delay}ms)`)
     const id = setInterval(() => savedCallback.current(), delay)
-    return () => clearInterval(id)
-  }, [delay, active])
+    return () => {
+      if (label) console.log(`[${label}] interval stop`)
+      clearInterval(id)
+    }
+  }, [delay, active, label])
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +224,11 @@ const MODEL_TO_LORA_DIR: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export function TrainingMonitor() {
+  useEffect(() => {
+    console.log('[TrainingMonitor] mount')
+    return () => console.log('[TrainingMonitor] unmount')
+  }, [])
+
   const [runs, setRuns] = useState<RunInfo[]>([])
   const [runsLoaded, setRunsLoaded] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -203,7 +238,7 @@ export function TrainingMonitor() {
   const [status, setStatus] = useState<TrainingStatus | null>(null)
   const [checkpoints, setCheckpoints] = useState<CheckpointInfo[]>([])
   const [lossHistory, setLossHistory] = useState<LossPoint[]>([])
-  const [logLines, setLogLines] = useState<Array<{ line: string; type: string }>>([])
+  const [logLines, setLogLines] = useState<Array<{ id: number; line: string; type: string }>>([])
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now())
   const [sseConnected, setSseConnected] = useState(false)
   const [secondsAgo, setSecondsAgo] = useState(0)
@@ -329,7 +364,7 @@ export function TrainingMonitor() {
       if (s.status === 'fulfilled') { setStatus(s.value); setLastUpdated(Date.now()) }
       if (cp.status === 'fulfilled') setCheckpoints(cp.value)
       if (lh.status === 'fulfilled') setLossHistory(lh.value.slice(-500))
-      if (ll.status === 'fulfilled') setLogLines(ll.value.map(line => ({ line, type: 'info' })))
+      if (ll.status === 'fulfilled') setLogLines(ll.value.map(line => ({ id: ++_nextLogId, line, type: 'info' })))
       setRunLoading(false)
     })
 
@@ -344,6 +379,7 @@ export function TrainingMonitor() {
     }
 
     // Connect SSE
+    console.log('[Training SSE] opening for run:', selectedRun)
     createTrainingEventSource(selectedRun).then(es => {
       if (aborted) {
         es.close()
@@ -362,11 +398,15 @@ export function TrainingMonitor() {
       })
 
       es.onopen = () => {
-        if (!aborted) setSseConnected(true)
+        if (!aborted) {
+          console.log('[Training SSE] open')
+          setSseConnected(true)
+        }
       }
 
       es.onerror = () => {
         if (aborted) return
+        console.log('[Training SSE] error — closing, starting 30s fallback poll')
         setSseConnected(false)
         es.removeEventListener('status', statusHandler)
         es.onopen  = null
@@ -390,6 +430,7 @@ export function TrainingMonitor() {
 
     return () => {
       aborted = true
+      console.log('[Training SSE] close (run:', selectedRun, ')')
       if (esRef.current) {
         esRef.current.removeEventListener('status', statusHandler)
         esRef.current.onopen  = null
@@ -438,6 +479,7 @@ export function TrainingMonitor() {
     },
     10_000,
     isWindowVisible,
+    'HW polling',
   )
 
   // Memory pressure detection — trim state arrays if JS heap > 500MB
@@ -744,16 +786,16 @@ export function TrainingMonitor() {
           <div className="mt-4">
             <div className="text-xs text-zinc-600 mb-1">Last {hwHistory.length} samples</div>
             <ResponsiveContainer width="100%" height={120}>
-              <ComposedChart data={hwChartData} margin={{ top: 2, right: 8, bottom: 2, left: 0 }}>
+              <ComposedChart data={hwChartData} margin={HW_CHART_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                 <XAxis dataKey="timestamp" hide />
-                <YAxis domain={[0, 100]} width={28} tick={{ fill: '#71717a', fontSize: 10 }} />
+                <YAxis domain={[0, 100]} width={28} tick={AXIS_TICK_SM} />
                 <Tooltip
-                  contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8 }}
-                  labelStyle={{ color: '#a1a1aa' }}
-                  itemStyle={{ color: '#e4e4e7' }}
-                  formatter={(value: unknown) => [`${(value as number).toFixed(1)}%`]}
-                  labelFormatter={() => ''}
+                  contentStyle={TOOLTIP_CONTENT_STYLE}
+                  labelStyle={TOOLTIP_LABEL_STYLE}
+                  itemStyle={TOOLTIP_ITEM_STYLE}
+                  formatter={fmtPct}
+                  labelFormatter={fmtEmpty}
                 />
                 <Line dataKey="gpu_vram_pct" stroke="#8b5cf6" dot={false} activeDot={false} name="VRAM%" isAnimationActive={false} />
                 <Line dataKey="gpu_utilization_pct" stroke="#22c55e" dot={false} activeDot={false} name="GPU%" isAnimationActive={false} />
@@ -961,24 +1003,24 @@ export function TrainingMonitor() {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
-              <ComposedChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
+              <ComposedChart data={chartData} margin={LOSS_CHART_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                 <XAxis
                   dataKey="step"
-                  tick={{ fill: '#71717a', fontSize: 11 }}
-                  tickFormatter={v => (v as number).toLocaleString()}
+                  tick={AXIS_TICK_LG}
+                  tickFormatter={fmtStep}
                 />
                 <YAxis
-                  tick={{ fill: '#71717a', fontSize: 11 }}
-                  tickFormatter={v => (v as number).toFixed(2)}
+                  tick={AXIS_TICK_LG}
+                  tickFormatter={fmtLossAxis}
                   width={48}
                 />
                 <Tooltip
-                  contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8 }}
-                  labelStyle={{ color: '#a1a1aa' }}
-                  itemStyle={{ color: '#e4e4e7' }}
-                  formatter={(value: unknown) => [(value as number).toFixed(4)]}
-                  labelFormatter={v => `Step ${(v as number).toLocaleString()}`}
+                  contentStyle={TOOLTIP_CONTENT_STYLE}
+                  labelStyle={TOOLTIP_LABEL_STYLE}
+                  itemStyle={TOOLTIP_ITEM_STYLE}
+                  formatter={fmtLoss}
+                  labelFormatter={fmtLossLabel}
                 />
                 <Line
                   type="monotone"
@@ -1109,7 +1151,7 @@ export function TrainingMonitor() {
               onClick={() => {
                 if (logTab === 'training' && selectedRun) {
                   getTrainingLog(20, selectedRun)
-                    .then(lines => setLogLines(lines.map(l => ({ line: l, type: 'info' }))))
+                    .then(lines => setLogLines(lines.map(l => ({ id: ++_nextLogId, line: l, type: 'info' }))))
                     .catch(() => {})
                 } else if (logTab === 'backend') {
                   getBackendLog(50).then(d => setBackendLogLines(d.lines.slice(-50))).catch(() => {})
@@ -1146,8 +1188,8 @@ export function TrainingMonitor() {
                 logLines
                   .filter(entry => logFilter === 'all' || entry.type === logFilter)
                   .slice(-20)
-                  .map((entry, i) => (
-                    <div key={i} className={`whitespace-pre-wrap break-all ${logLineClass(entry.type)}`}>
+                  .map((entry) => (
+                    <div key={entry.id} className={`whitespace-pre-wrap break-all ${logLineClass(entry.type)}`}>
                       {entry.line}
                     </div>
                   ))
@@ -1158,10 +1200,10 @@ export function TrainingMonitor() {
                   No backend log yet. Start the backend to generate log output.
                 </div>
               ) : (
-                backendLogLines.slice(-20).map((line, i) => {
+                backendLogLines.slice(-20).map((line) => {
                   const t = /\] ERROR\b|\] CRITICAL\b/.test(line) ? 'error' : 'info'
                   return (
-                    <div key={i} className={`whitespace-pre-wrap break-all ${logLineClass(t)}`}>
+                    <div key={line} className={`whitespace-pre-wrap break-all ${logLineClass(t)}`}>
                       {line}
                     </div>
                   )

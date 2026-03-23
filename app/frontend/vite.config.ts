@@ -65,5 +65,6 @@ export default defineConfig({
   // Suppress Tauri-related warnings in browser dev mode
   build: {
     target: 'esnext',
+    sourcemap: false,
   },
 })

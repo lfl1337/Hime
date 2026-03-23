@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { openUrl as openerOpenUrl } from '@tauri-apps/plugin-opener'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { useTheme } from '@/App'
-import { getTrainingConfig, updateTrainingConfig, getCondaEnvs, getMemoryDetail } from '@/api/training'
+import { getTrainingConfig, updateTrainingConfig, getMemoryDetail } from '@/api/training'
 import type { MemoryDetail } from '@/api/training'
 import { connectionRegistry } from '@/utils/connectionRegistry'
 import type { Connection } from '@/utils/connectionRegistry'
@@ -251,10 +251,6 @@ export function Settings() {
   const [defaultEpochs, setDefaultEpochs] = useState<number>(
     () => parseInt(localStorage.getItem('hime_default_epochs') ?? '3') || 3
   )
-  const [defaultCondaEnv, setDefaultCondaEnv] = useState<string>(
-    () => localStorage.getItem('hime_default_conda_env') ?? 'hime'
-  )
-  const [condaEnvs, setCondaEnvs] = useState<string[] | null>(null)
 
   // Paths
   const [modelsBasePath, setModelsBasePath] = useState('')
@@ -320,10 +316,6 @@ export function Settings() {
     }).catch(() => {})
     getEpubSettings().then(s => setEpubFolder(s.epub_watch_folder)).catch(() => {})
     getHealthInfo().then(h => setBackendVersion(h.version)).catch(() => {})
-    getCondaEnvs().then(envs => {
-      setCondaEnvs(envs)
-      // If saved env isn't in the list, keep it as a custom value
-    }).catch(() => setCondaEnvs(null))
   }, [])
 
   const handleCheckpointPref = (v: 'best' | 'latest') => {
@@ -334,18 +326,6 @@ export function Settings() {
     setDefaultEpochs(v)
     localStorage.setItem('hime_default_epochs', String(v))
   }
-  const handleCondaEnv = (v: string) => {
-    setDefaultCondaEnv(v)
-    localStorage.setItem('hime_default_conda_env', v)
-  }
-
-  // Ensure current value is in the dropdown options (add as custom entry if not)
-  const condaOptions = condaEnvs
-    ? condaEnvs.includes(defaultCondaEnv)
-      ? condaEnvs
-      : [defaultCondaEnv, ...condaEnvs]
-    : null
-
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
       <h1 className="text-xl font-bold text-zinc-100 mb-6">Settings</h1>
@@ -371,28 +351,6 @@ export function Settings() {
             onChange={e => handleEpochs(Math.max(1, Math.min(10, parseInt(e.target.value) || 3)))}
             className="w-16 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-2 py-1 text-center focus:outline-none focus:border-violet-500"
           />
-        </Row>
-        <Row label="Conda environment">
-          {condaOptions ? (
-            <select
-              value={defaultCondaEnv}
-              onChange={e => handleCondaEnv(e.target.value)}
-              className="w-44 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1 focus:outline-none focus:border-violet-500"
-            >
-              {condaOptions.map(env => (
-                <option key={env} value={env}>{env}</option>
-              ))}
-            </select>
-          ) : condaEnvs === null && (
-            // Still loading or failed — show text input fallback
-            <input
-              type="text"
-              value={defaultCondaEnv}
-              onChange={e => handleCondaEnv(e.target.value)}
-              placeholder="Loading…"
-              className="w-40 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1 focus:outline-none focus:border-violet-500"
-            />
-          )}
         </Row>
       </Section>
 

@@ -1,6 +1,7 @@
 """Start/stop LoRA training jobs from the app UI."""
 import json
 import logging
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -63,9 +64,9 @@ def start_training(
     model_name: str,
     resume_checkpoint: str | None = None,
     epochs: int = 3,
-    conda_env: str = "hime",
     model_key: str | None = None,
 ) -> TrainingProcess:
+    conda_env = "hime"
     # If model_key is provided, enforce the canonical run name so PID/log/checkpoint
     # paths are consistent regardless of what model_name the caller passed.
     if model_key and model_key in MODEL_KEY_TO_RUN_NAME:
@@ -101,7 +102,12 @@ def start_training(
             "--log-file", log,
         ]
         if resume_checkpoint:
-            full_cp = _checkpoint_dir(model_name) / resume_checkpoint
+            if not re.match(r"^checkpoint-\d+$", resume_checkpoint):
+                raise ValueError(f"Invalid checkpoint name: {resume_checkpoint!r}")
+            cp_base = _checkpoint_dir(model_name).resolve()
+            full_cp = (cp_base / resume_checkpoint).resolve()
+            if not str(full_cp).startswith(str(cp_base)):
+                raise ValueError("Checkpoint path escapes checkpoint directory")
             if not full_cp.exists():
                 raise FileNotFoundError(f"Checkpoint not found: {full_cp}")
             cmd += ["--resume", str(full_cp)]
@@ -116,7 +122,12 @@ def start_training(
             "--log-file", log,
         ]
         if resume_checkpoint:
-            full_cp = _checkpoint_dir(model_name) / resume_checkpoint
+            if not re.match(r"^checkpoint-\d+$", resume_checkpoint):
+                raise ValueError(f"Invalid checkpoint name: {resume_checkpoint!r}")
+            cp_base = _checkpoint_dir(model_name).resolve()
+            full_cp = (cp_base / resume_checkpoint).resolve()
+            if not str(full_cp).startswith(str(cp_base)):
+                raise ValueError("Checkpoint path escapes checkpoint directory")
             if not full_cp.exists():
                 raise FileNotFoundError(f"Checkpoint not found: {full_cp}")
             cmd += ["--resume_from_checkpoint", str(full_cp)]

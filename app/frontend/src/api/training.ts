@@ -81,7 +81,6 @@ export interface StartTrainingParams {
   model_name: string
   resume_checkpoint: string | null
   epochs: number
-  conda_env: string
   model_key?: string  // 'qwen32b' | 'qwen14b' | 'qwen72b' | 'gemma27b' | 'deepseek'
 }
 

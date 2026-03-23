@@ -1,9 +1,13 @@
 """EPUB library endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from enum import Enum
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
+from ..middleware.rate_limit import limiter
 from ..services.epub_service import (
     export_chapter,
     get_chapters,
@@ -28,17 +32,31 @@ class TranslationRequest(BaseModel):
 
 
 class SettingRequest(BaseModel):
-    key: str
-    value: str
+    key: str = Field(..., pattern=r"^(epub_watch_folder|auto_scan_interval)$")
+    value: str = Field(..., max_length=1024)
+
+
+class ExportFormat(str, Enum):
+    txt = "txt"
 
 
 @router.post("/import", status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")
 async def api_import_epub(
+    request: Request,
     body: ImportRequest,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    file_path = Path(body.file_path).resolve()
+    if file_path.suffix.lower() != ".epub":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .epub files allowed")
+    watch_folder_str = await get_setting("epub_watch_folder", session)
+    if watch_folder_str:
+        watch_folder = Path(watch_folder_str).resolve()
+        if not str(file_path).startswith(str(watch_folder)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Path outside allowed folder")
     try:
-        return await import_epub(body.file_path, session)
+        return await import_epub(str(file_path), session)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
 
@@ -78,7 +96,7 @@ async def api_save_translation(
 @router.get("/export/{chapter_id}")
 async def api_export_chapter(
     chapter_id: int,
-    format: str = Query(default="txt"),  # noqa: A002
+    format: ExportFormat = Query(default=ExportFormat.txt),  # noqa: A002
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     text = await export_chapter(chapter_id, format, session)

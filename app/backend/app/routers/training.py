@@ -33,9 +33,12 @@ from ..services.training_runner import (
 router = APIRouter(prefix="/training", tags=["training"])
 
 
+_RUN_PATTERN = r"^[\w\-\.]+$"
+
+
 @router.get("/status", response_model=TrainingStatus)
 async def training_status(
-    run: str = Query(default="Qwen2.5-32B-Instruct"),
+    run: str = Query(default="Qwen2.5-32B-Instruct", pattern=_RUN_PATTERN, max_length=128),
 ) -> TrainingStatus:
     """Current training run status, step, epoch, and best checkpoint."""
     return get_training_status(run)
@@ -43,7 +46,7 @@ async def training_status(
 
 @router.get("/checkpoints", response_model=list[CheckpointInfo])
 async def list_checkpoints(
-    run: str = Query(default="Qwen2.5-32B-Instruct"),
+    run: str = Query(default="Qwen2.5-32B-Instruct", pattern=_RUN_PATTERN, max_length=128),
 ) -> list[CheckpointInfo]:
     """List all checkpoint directories including the interrupted snapshot."""
     return get_checkpoints(run)
@@ -51,7 +54,7 @@ async def list_checkpoints(
 
 @router.get("/loss-history", response_model=list[LossPoint])
 async def loss_history(
-    run: str = Query(default="Qwen2.5-32B-Instruct"),
+    run: str = Query(default="Qwen2.5-32B-Instruct", pattern=_RUN_PATTERN, max_length=128),
 ) -> list[LossPoint]:
     """Full log_history merged by step — training loss and eval loss."""
     return get_loss_history(run)
@@ -60,7 +63,7 @@ async def loss_history(
 @router.get("/log")
 async def training_log(
     lines: int = Query(default=20, ge=1, le=500),
-    run: str = Query(default="Qwen2.5-32B-Instruct"),
+    run: str = Query(default="Qwen2.5-32B-Instruct", pattern=_RUN_PATTERN, max_length=128),
 ) -> dict:
     """Last N lines of the training log file."""
     return {"lines": get_log_tail(run, lines)}
@@ -80,7 +83,7 @@ async def list_gguf_models() -> list[GGUFModelInfo]:
 
 @router.get("/stream")
 async def training_stream(
-    run: str = Query(default="Qwen2.5-32B-Instruct"),
+    run: str = Query(default="Qwen2.5-32B-Instruct", pattern=_RUN_PATTERN, max_length=128),
 ) -> StreamingResponse:
     """SSE stream — emits 'status' and 'log_line' events every 3 seconds."""
     async def event_generator():
@@ -106,7 +109,6 @@ class StartTrainingRequest(BaseModel):
     model_name: str
     resume_checkpoint: str | None = None
     epochs: int = 3
-    conda_env: str = "hime"
     model_key: str | None = None  # 'qwen32b' | 'qwen14b' | 'qwen72b' | 'gemma27b' | 'deepseek'
 
 
@@ -122,7 +124,6 @@ async def api_start_training(body: StartTrainingRequest) -> TrainingProcess:
             model_name=body.model_name,
             resume_checkpoint=body.resume_checkpoint,
             epochs=body.epochs,
-            conda_env=body.conda_env,
             model_key=body.model_key,
         )
     except RuntimeError as e:
@@ -178,6 +179,11 @@ async def update_training_config(body: TrainingConfigUpdate) -> dict:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unknown config key: {body.key}",
+        )
+    if "\n" in body.value or "\r" in body.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid value: newlines not allowed",
         )
     setattr(settings, body.key, body.value)
     env_path = Path(_ENV_FILE)

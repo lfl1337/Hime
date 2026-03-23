@@ -335,7 +335,7 @@ export function TrainingMonitor() {
       if (aborted) return
       if (s.status === 'fulfilled') { setStatus(s.value); setLastUpdated(Date.now()) }
       if (cp.status === 'fulfilled') setCheckpoints(cp.value)
-      if (lh.status === 'fulfilled') setLossHistory(lh.value.slice(-1000))
+      if (lh.status === 'fulfilled') setLossHistory(lh.value.slice(-500))
       if (ll.status === 'fulfilled') setLogLines(ll.value.map(line => ({ line, type: 'info' })))
       setRunLoading(false)
     })
@@ -364,7 +364,7 @@ export function TrainingMonitor() {
         if (aborted) return
         try {
           const points = JSON.parse(e.data) as LossPoint[]
-          setLossHistory(points.slice(-1000))
+          setLossHistory(points.slice(-500))
         } catch { /* ignore parse errors */ }
       })
 
@@ -763,9 +763,9 @@ export function TrainingMonitor() {
                   formatter={(value: unknown) => [`${(value as number).toFixed(1)}%`]}
                   labelFormatter={() => ''}
                 />
-                <Line dataKey="gpu_vram_pct" stroke="#8b5cf6" dot={false} name="VRAM%" isAnimationActive={false} />
-                <Line dataKey="gpu_utilization_pct" stroke="#22c55e" dot={false} name="GPU%" isAnimationActive={false} />
-                <Line dataKey="ram_pct" stroke="#f59e0b" dot={false} name="RAM%" isAnimationActive={false} />
+                <Line dataKey="gpu_vram_pct" stroke="#8b5cf6" dot={false} activeDot={false} name="VRAM%" isAnimationActive={false} />
+                <Line dataKey="gpu_utilization_pct" stroke="#22c55e" dot={false} activeDot={false} name="GPU%" isAnimationActive={false} />
+                <Line dataKey="ram_pct" stroke="#f59e0b" dot={false} activeDot={false} name="RAM%" isAnimationActive={false} />
               </ComposedChart>
             </ResponsiveContainer>
             <div className="flex gap-4 mt-1 text-xs text-zinc-600">

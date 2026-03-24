@@ -189,6 +189,15 @@ export async function getTrainingConfig(): Promise<TrainingConfig> {
   return res.json() as Promise<TrainingConfig>
 }
 
+export async function updateTrainingConfig(key: string, value: string): Promise<TrainingConfig> {
+  const res = await apiFetch('/api/v1/training/config', {
+    method: 'POST',
+    body: JSON.stringify({ key, value }),
+  })
+  if (!res.ok) throw new Error(`training/config update failed: ${res.statusText}`)
+  return res.json() as Promise<TrainingConfig>
+}
+
 // ---------------------------------------------------------------------------
 // Hardware monitoring
 // ---------------------------------------------------------------------------

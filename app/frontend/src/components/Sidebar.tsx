@@ -15,8 +15,16 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/comparison', label: 'Comparison', icon: '比' },
   { to: '/editor', label: 'Editor', icon: '編' },
   { to: '/monitor', label: 'Monitor', icon: '監' },
-  { to: '/settings', label: 'Settings', icon: '設定' },
 ]
+
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/>
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+    </svg>
+  )
+}
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
@@ -88,6 +96,26 @@ export function Sidebar() {
         ))}
       </nav>
 
+      {/* Settings gear icon — above footer */}
+      <div className="px-2 pb-1">
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            `flex items-center gap-3 px-3 py-2.5 mx-1 rounded-lg text-sm transition-colors ${
+              isActive
+                ? 'bg-[#7C6FCD]/20 text-[#7C6FCD]'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+            }`
+          }
+          title="Settings"
+        >
+          <span className="w-6 flex items-center justify-center flex-shrink-0">
+            <GearIcon />
+          </span>
+          {!collapsed && <span>Settings</span>}
+        </NavLink>
+      </div>
+
       {/* Footer — backend status */}
       <div className="px-3 py-3 border-t border-zinc-800">
         {collapsed ? (
@@ -100,7 +128,7 @@ export function Sidebar() {
           <div className="flex flex-col gap-1">
             <span className="text-xs text-zinc-600">Backend</span>
             <StatusBadge online={backendOnline} />
-            <p className="mt-1 text-xs text-zinc-600">Hime v0.7.0</p>
+            <p className="mt-1 text-xs text-zinc-600">Hime v0.7.1</p>
           </div>
         )}
       </div>

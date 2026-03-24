@@ -280,6 +280,8 @@ export function TrainingMonitor() {
   const esRef = useRef<EventSource | null>(null)
   const fallbackRef = useRef<number | null>(null)
   const selectedRunRef = useRef<string | null>(null)
+  const lastUpdatedRef = useRef<number>(Date.now())
+  const hwLastUpdatedRef = useRef<number | null>(null)
 
   // Mount effect: fetch runs and GGUF models in parallel, then select first run
   useEffect(() => {
@@ -449,21 +451,30 @@ export function TrainingMonitor() {
     }
   }, [selectedRun, isWindowVisible])
 
-  // "X seconds ago" tickers — training status + hardware last-updated
+  // Keep timestamp refs in sync — lets the stable 1 Hz intervals below read
+  // the latest value without being recreated on every status / HW update.
+  useEffect(() => { lastUpdatedRef.current = lastUpdated }, [lastUpdated])
+  useEffect(() => { hwLastUpdatedRef.current = hwLastUpdated }, [hwLastUpdated])
+
+  // "X seconds ago" tickers — one stable interval each (created once on mount,
+  // destroyed on unmount).  Previously these were re-created on every status /
+  // hw-poll update via [lastUpdated] / [hwLastUpdated] deps, causing 360+
+  // micro-GC cycles per hour and unnecessary React re-renders.
   useEffect(() => {
     const id = window.setInterval(() => {
-      setSecondsAgo(Math.floor((Date.now() - lastUpdated) / 1000))
+      setSecondsAgo(Math.floor((Date.now() - lastUpdatedRef.current) / 1000))
     }, 1000)
     return () => clearInterval(id)
-  }, [lastUpdated])
+  }, [])
 
   useEffect(() => {
-    if (hwLastUpdated === null) return
     const id = window.setInterval(() => {
-      setHwSecondsAgo(Math.floor((Date.now() - hwLastUpdated) / 1000))
+      if (hwLastUpdatedRef.current !== null) {
+        setHwSecondsAgo(Math.floor((Date.now() - hwLastUpdatedRef.current) / 1000))
+      }
     }, 1000)
     return () => clearInterval(id)
-  }, [hwLastUpdated])
+  }, [])
 
   // Hardware auto-polling every 10s
   useInterval(

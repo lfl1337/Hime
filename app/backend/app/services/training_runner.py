@@ -132,12 +132,15 @@ def start_training(
                 raise FileNotFoundError(f"Checkpoint not found: {full_cp}")
             cmd += ["--resume_from_checkpoint", str(full_cp)]
 
+    _log.info("Training command: %s", " ".join(cmd))
+    _stderr_fh = open(log, "a", encoding="utf-8")
     proc = subprocess.Popen(
         cmd,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=_stderr_fh,  # Capture C-level crashes (CUDA, OOM, import errors) to log
     )
+    _stderr_fh.close()  # Safe: child process has inherited its own copy of the fd
 
     meta = {
         "pid": proc.pid,

@@ -512,8 +512,8 @@ export function Settings() {
                 <div className="text-xs text-zinc-600 mb-1">Top processes by RSS</div>
                 <table className="w-full text-xs">
                   <tbody>
-                    {memDetail.top_processes.map((p, i) => (
-                      <tr key={i} className="text-zinc-400">
+                    {memDetail.top_processes.map((p) => (
+                      <tr key={p.pid} className="text-zinc-400">
                         <td className="py-0.5 font-mono truncate max-w-[180px]">{p.name}</td>
                         <td className="py-0.5 text-right text-zinc-500">{p.rss_mb} MB</td>
                       </tr>

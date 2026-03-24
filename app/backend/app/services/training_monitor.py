@@ -634,7 +634,7 @@ async def stream_events(run_name: str):
     # Send full loss history on initial connect so frontend can skip separate HTTP call
     try:
         history = get_loss_history(run_name)
-        yield {"event": "loss_history_batch", "data": json.dumps([p.model_dump() for p in history])}
+        yield {"event": "loss_history_batch", "data": json.dumps([p.model_dump() for p in history[-200:]])}
     except Exception:
         pass
 

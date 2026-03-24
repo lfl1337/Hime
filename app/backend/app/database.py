@@ -42,6 +42,13 @@ async def init_db() -> None:
                     text(f"ALTER TABLE translations ADD COLUMN {col} {dtype}")
                 )
 
+        # Seed default settings (INSERT OR IGNORE preserves user changes)
+        await conn.execute(text(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES "
+            "('epub_watch_folder', 'C:/Projekte/Hime/data/epubs/'), "
+            "('auto_scan_interval', '60')"
+        ))
+
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency that yields a database session."""

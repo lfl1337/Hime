@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from collections.abc import AsyncGenerator
 
 from fastapi import FastAPI
@@ -7,23 +8,44 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from .config import settings
-from .database import init_db
+from .database import AsyncSessionLocal, init_db
 from .middleware.audit import AuditMiddleware
 from .middleware.rate_limit import limiter
 from .routers import texts, translations, training
+from .routers import epub as epub_router
 from .websocket import streaming
+from .services.epub_service import get_setting, scan_watch_folder
+
+DEFAULT_WATCH_FOLDER = "C:/Projekte/Hime/data/epubs/"
+
+
+async def _scan_loop() -> None:
+    while True:
+        await asyncio.sleep(60)
+        async with AsyncSessionLocal() as session:
+            folder = await get_setting("epub_watch_folder", session) or DEFAULT_WATCH_FOLDER
+            await scan_watch_folder(folder, session)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
+    # Initial scan on startup
+    async with AsyncSessionLocal() as session:
+        folder = await get_setting("epub_watch_folder", session) or DEFAULT_WATCH_FOLDER
+        await scan_watch_folder(folder, session)
+    # Background 60-second periodic scan
+    task = asyncio.create_task(_scan_loop())
     yield
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 app = FastAPI(
     title="Hime Translation API",
     description="Local-first Japanese-to-English light novel translation",
-    version="0.2.3",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -53,10 +75,11 @@ app.add_middleware(
 app.include_router(texts.router, prefix="/api/v1")
 app.include_router(translations.router, prefix="/api/v1")
 app.include_router(training.router, prefix="/api/v1")
+app.include_router(epub_router.router, prefix="/api/v1")
 app.include_router(streaming.router)  # WebSocket — no /api/v1 prefix
 
 
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     """Liveness check — no auth required."""
-    return {"status": "ok", "app": "hime", "version": "0.2.3"}
+    return {"status": "ok", "app": "hime", "version": "0.3.0"}

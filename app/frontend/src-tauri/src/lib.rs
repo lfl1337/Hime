@@ -129,6 +129,21 @@ pub fn run() {
                 }
             });
 
+            // 12-hour idle warning
+            let log_for_idle = Arc::clone(&log);
+            std::thread::spawn(move || {
+                let start = std::time::Instant::now();
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(3600)); // 1 h
+                    let hours = start.elapsed().as_secs() / 3600;
+                    if hours >= 12 {
+                        log_line(&log_for_idle,
+                            "[hime] WARNING: App has been running for 12+ hours. Consider restarting to free memory.");
+                        break;
+                    }
+                }
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {

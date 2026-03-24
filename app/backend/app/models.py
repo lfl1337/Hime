@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -52,3 +52,51 @@ class Translation(Base):
     current_stage:          Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     source_text: Mapped["SourceText"] = relationship(back_populates="translations")
+
+
+class Book(Base):
+    __tablename__ = "books"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    author: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    file_path: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    cover_image_blob: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    last_accessed: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    total_chapters: Mapped[int] = mapped_column(Integer, default=0)
+    total_paragraphs: Mapped[int] = mapped_column(Integer, default=0)
+    translated_paragraphs: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="not_started")
+    chapters: Mapped[list["Chapter"]] = relationship(back_populates="book", cascade="all, delete-orphan")
+
+
+class Chapter(Base):
+    __tablename__ = "chapters"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"), nullable=False)
+    chapter_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    total_paragraphs: Mapped[int] = mapped_column(Integer, default=0)
+    translated_paragraphs: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="not_started")
+    book: Mapped["Book"] = relationship(back_populates="chapters")
+    paragraphs: Mapped[list["Paragraph"]] = relationship(back_populates="chapter", cascade="all, delete-orphan")
+
+
+class Paragraph(Base):
+    __tablename__ = "paragraphs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chapter_id: Mapped[int] = mapped_column(ForeignKey("chapters.id"), nullable=False)
+    paragraph_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)
+    translated_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_translated: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_skipped: Mapped[bool] = mapped_column(Boolean, default=False)
+    translated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    chapter: Mapped["Chapter"] = relationship(back_populates="paragraphs")
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)

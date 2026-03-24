@@ -245,15 +245,26 @@ def save_hardware_stats(stats: HardwareStats) -> None:
         pass
 
 
-def cleanup_old_hardware_stats(hours: int = 2) -> None:
+def cleanup_old_hardware_stats(hours: int = 1) -> None:
     """Delete hardware_stats rows older than N hours (sync, thread-safe)."""
     db = _db_path()
     try:
         con = sqlite3.connect(db, timeout=5)
+        # Ensure timestamp index exists (idempotent, cheap after first run)
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_hw_timestamp ON hardware_stats(timestamp)"
+        )
         con.execute(
             "DELETE FROM hardware_stats WHERE timestamp < datetime('now', ? || ' hours')",
             (f"-{hours}",),
         )
+        # Emergency cap: if table has grown unexpectedly, keep only newest 1000 rows
+        row = con.execute("SELECT COUNT(*) FROM hardware_stats").fetchone()
+        if row and row[0] > 10000:
+            con.execute(
+                "DELETE FROM hardware_stats WHERE id NOT IN "
+                "(SELECT id FROM hardware_stats ORDER BY timestamp DESC LIMIT 1000)"
+            )
         con.commit()
         con.close()
     except Exception:
@@ -268,7 +279,9 @@ def get_hardware_history(minutes: int = 10) -> list[HardwareStats]:
         con = sqlite3.connect(db, timeout=5)
         con.row_factory = sqlite3.Row
         rows = con.execute(
-            "SELECT * FROM hardware_stats WHERE timestamp > ? ORDER BY timestamp ASC",
+            "SELECT * FROM ("
+            "SELECT * FROM hardware_stats WHERE timestamp > ? ORDER BY timestamp DESC LIMIT 120"
+            ") ORDER BY timestamp ASC",
             (cutoff,),
         ).fetchall()
         con.close()
@@ -302,3 +315,14 @@ def get_hardware_history(minutes: int = 10) -> list[HardwareStats]:
         return result
     except Exception:
         return []
+
+
+def vacuum_hardware_db() -> None:
+    """Run VACUUM on the hardware SQLite database to reclaim disk space after DELETEs."""
+    db = _db_path()
+    try:
+        con = sqlite3.connect(db, timeout=30)
+        con.execute("VACUUM")
+        con.close()
+    except Exception:
+        pass

@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="Hime Translation API",
     description="Local-first Japanese-to-English light novel translation",
-    version="0.2.0",
+    version="0.2.1",
     lifespan=lifespan,
 )
 
@@ -34,16 +34,18 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Audit logging — must come before CORS so every request is captured
 app.add_middleware(AuditMiddleware, log_path=settings.audit_log_path)
 
-# CORS — only allow the Tauri dev server and the packaged app origin
+# CORS — allow Tauri origins (dev + packaged) and any local port
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:1420",   # Tauri dev default
         "http://127.0.0.1:1420",
-        "tauri://localhost",       # Packaged Tauri app
+        "tauri://localhost",       # Packaged Tauri app (macOS/Linux)
+        "http://tauri.localhost",  # Packaged Tauri app (Windows WebView2)
     ],
+    allow_origin_regex=r"http://(127\.0\.0\.1|localhost)(:\d+)?",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
 )
 
@@ -57,4 +59,4 @@ app.include_router(streaming.router)  # WebSocket — no /api/v1 prefix
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     """Liveness check — no auth required."""
-    return {"status": "ok", "app": "hime", "version": "0.1.0"}
+    return {"status": "ok", "app": "hime", "version": "0.2.1"}

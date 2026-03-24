@@ -1,6 +1,6 @@
 {
   "productName": "Hime",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "identifier": "dev.hime.app",
   "build": {
     "beforeDevCommand": "npm run vite",
@@ -25,6 +25,11 @@
       "csp": null
     }
   },
+  "plugins": {
+    "shell": {
+      "open": false
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "nsis",
@@ -35,7 +40,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["../binaries/hime-backend"],
+    "externalBin": ["binaries/hime-backend"],
     "windows": {
       "nsis": {
         "displayLanguageSelector": false,

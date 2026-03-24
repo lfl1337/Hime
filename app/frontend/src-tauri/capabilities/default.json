@@ -1,0 +1,25 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema/acl/capability.json",
+  "identifier": "default",
+  "description": "Default capabilities for Hime desktop app",
+  "platforms": ["linux", "macOS", "windows"],
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "fs:allow-read-text-file",
+    "fs:allow-exists",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APP_DATA/**" },
+        { "path": "**" }
+      ]
+    },
+    "shell:allow-execute",
+    "shell:allow-spawn",
+    {
+      "identifier": "shell:scope",
+      "allow": [{ "name": "hime-backend", "sidecar": true }]
+    }
+  ]
+}

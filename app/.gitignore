@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments / uv
+.venv/
+venv/
+.uv/
+
+# Environment variables — never commit this
+backend/.env
+
+# Runtime state (ephemeral — generated on each startup)
+backend/.runtime_port
+
+# Database
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+
+# Logs
+backend/logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Tauri / Node
+frontend/node_modules/
+frontend/dist/
+frontend/src-tauri/target/
+frontend/.next/
+frontend/out/
+
+# Docker
+docker/*.env
+
+# Coverage / testing
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

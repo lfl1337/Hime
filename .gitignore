@@ -1,0 +1,77 @@
+# ─── Large local-only directories ────────────────────────────────────────────
+# Conda installation and downloaded installers are machine-specific, not source
+Conda/
+downloads(programme)/
+
+# ─── Model weights (binary, often tens of GB) ────────────────────────────────
+*.gguf
+*.safetensors
+*.bin
+# GGUF model directories (contain nothing but weight files)
+modelle/lmstudio-community/
+# LoRA training checkpoints (can be many GB each)
+modelle/lora/*/checkpoint/
+modelle/lora/*/interrupted/
+
+# ─── Training data (too large for git) ───────────────────────────────────────
+data/training/
+data/raw_jparacrawl/
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.uv/
+.eggs/
+*.egg
+
+# ─── Node / frontend ─────────────────────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+
+# ─── Tauri — Rust build artifacts (can be several GB) ────────────────────────
+app/frontend/src-tauri/target/
+
+# ─── PyInstaller build artifacts ─────────────────────────────────────────────
+app/build/
+*.spec
+app/frontend/src-tauri/binaries/
+
+# ─── Sensitive files (NEVER commit) ──────────────────────────────────────────
+.env
+# .env.example is intentionally NOT ignored — it's safe to commit
+.runtime_port
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+app/backend/logs/
+
+# ─── Database files ───────────────────────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+
+# ─── OS-generated files ──────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── IDE ─────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── Claude Code local settings (machine-specific) ───────────────────────────
+.claude/
+
+# ─── Test / lint caches ──────────────────────────────────────────────────────
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

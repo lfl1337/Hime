@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-zinc-950 text-zinc-100 font-sans;
+  }
+}
+
+@layer utilities {
+  .jp-text {
+    font-family: 'system-ui', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif;
+  }
+}

@@ -1,0 +1,179 @@
+// Port and API key discovery for local-first backend
+//
+// DEV mode  (npm run vite  OR  tauri dev):
+//   getBaseUrl() returns window.location.origin so requests go to the
+//   Vite dev server, which proxies /api, /health, /ws to the backend.
+//   The backend port is resolved once at Vite startup by reading
+//   .runtime_port in Node.js — no CORS, no Tauri fs plugin needed.
+//
+// PROD mode (packaged Tauri app):
+//   getPort() reads .runtime_port from %APPDATA%\dev.hime.app\ via
+//   appDataDir() + readTextFile(), matching where run.py writes it.
+//   getApiKey() reads .env from the same directory.
+
+let cachedPort: number | null = null
+let cachedApiKey: string | null = null
+
+async function tryReadFile(filePath: string): Promise<string | null> {
+  try {
+    const { readTextFile } = await import('@tauri-apps/plugin-fs')
+    const content = await readTextFile(filePath)
+    console.debug(`[client] tryReadFile OK: ${filePath}`)
+    return content
+  } catch (err) {
+    console.debug(`[client] tryReadFile failed: ${filePath}`, err)
+    return null
+  }
+}
+
+async function probePort(port: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: AbortSignal.timeout(500),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+// Only used in production Tauri mode where there is no Vite proxy.
+async function getPort(): Promise<number> {
+  if (cachedPort !== null) return cachedPort
+
+  // 1. Read from AppData dir (matches where run.py --data-dir writes it)
+  try {
+    const { appDataDir } = await import('@tauri-apps/api/path')
+    const dir = await appDataDir()
+    const content = await tryReadFile(`${dir}.runtime_port`)
+    if (content) {
+      const port = parseInt(content.trim(), 10)
+      if (!isNaN(port)) {
+        console.log(`[client] Port ${port} from appDataDir`)
+        cachedPort = port
+        return port
+      }
+    }
+  } catch (err) {
+    console.debug('[client] appDataDir() unavailable:', err)
+  }
+
+  console.warn('[client] Could not read .runtime_port — probing 8000–8010')
+
+  // 2. Probe ports sequentially as final fallback
+  for (let port = 8000; port <= 8010; port++) {
+    if (await probePort(port)) {
+      console.log(`[client] Backend found via probe at port ${port}`)
+      cachedPort = port
+      return port
+    }
+  }
+
+  console.error('[client] No backend found on 8000–8010 — defaulting to 8004')
+  cachedPort = 8004
+  return 8004
+}
+
+export async function getApiKey(): Promise<string> {
+  if (cachedApiKey !== null) return cachedApiKey
+
+  // Try AppData .env (production Tauri sidecar mode)
+  try {
+    const { appDataDir } = await import('@tauri-apps/api/path')
+    const dir = await appDataDir()
+    const content = await tryReadFile(`${dir}.env`)
+    if (content) {
+      const match = content.match(/^API_KEY\s*=\s*(.+)$/m)
+      if (match) {
+        cachedApiKey = match[1].trim()
+        console.log('[client] API key loaded from AppData .env')
+        return cachedApiKey
+      }
+      console.warn('[client] AppData .env: no API_KEY= line matched')
+    }
+  } catch (err) {
+    console.debug('[client] appDataDir() unavailable for .env:', err)
+  }
+
+  console.warn('[client] Tauri fs could not read .env — checking localStorage')
+
+  // Fallback: localStorage (set once via setApiKey() or browser console)
+  const stored = localStorage.getItem('hime_api_key')
+  if (stored) {
+    console.log('[client] API key loaded from localStorage')
+    cachedApiKey = stored
+    return stored
+  }
+
+  console.error(
+    '[client] No API key found — requests will fail with 401.\n' +
+    'Run in the browser console:\n' +
+    '  localStorage.setItem("hime_api_key", "<API_KEY from backend/.env>")',
+  )
+  return ''
+}
+
+export function setApiKey(key: string): void {
+  cachedApiKey = key
+  localStorage.setItem('hime_api_key', key)
+  console.log('[client] API key saved to localStorage')
+}
+
+export async function getBaseUrl(): Promise<string> {
+  if (import.meta.env.DEV) {
+    // Dev mode: Vite proxy handles routing to the backend.
+    // Use the same origin so requests are proxied, not sent directly.
+    // This works for both  npm run vite  and  tauri dev.
+    console.debug(`[client] baseUrl = ${window.location.origin} (dev/proxy mode)`)
+    return window.location.origin
+  }
+
+  // Production Tauri: discover the real backend port directly
+  try {
+    const port = await getPort()
+    const url = `http://127.0.0.1:${port}`
+    console.debug(`[client] baseUrl = ${url} (prod/direct mode)`)
+    return url
+  } catch (err) {
+    console.error('[client] getBaseUrl() threw:', err)
+    return 'http://127.0.0.1:8004'
+  }
+}
+
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const baseUrl = await getBaseUrl()
+  const apiKey = await getApiKey()
+  const headers = new Headers(init.headers)
+  if (apiKey) {
+    headers.set('X-API-Key', apiKey)
+  }
+  if (!headers.has('Content-Type') && init.body) {
+    headers.set('Content-Type', 'application/json')
+  }
+  return fetch(`${baseUrl}${path}`, { ...init, headers })
+}
+
+export async function createWebSocket(jobId: number): Promise<WebSocket> {
+  const apiKey = await getApiKey()
+  if (import.meta.env.DEV) {
+    // Dev mode: route WebSocket through the Vite proxy (/ws → backend)
+    const wsOrigin = window.location.origin.replace(/^http/, 'ws')
+    return new WebSocket(`${wsOrigin}/ws/translate/${jobId}?api_key=${encodeURIComponent(apiKey)}`)
+  }
+  const port = await getPort()
+  return new WebSocket(`ws://127.0.0.1:${port}/ws/translate/${jobId}?api_key=${encodeURIComponent(apiKey)}`)
+}
+
+export async function checkBackendOnline(): Promise<boolean> {
+  try {
+    const baseUrl = await getBaseUrl()
+    const apiKey = await getApiKey()
+    const res = await fetch(`${baseUrl}/health`, {
+      headers: { 'X-API-Key': apiKey },
+      signal: AbortSignal.timeout(2000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}

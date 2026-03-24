@@ -55,8 +55,9 @@ def start_training(
     resume_checkpoint: str | None = None,
     epochs: int = 3,
     conda_env: str = "hime",
+    model_key: str | None = None,
 ) -> TrainingProcess:
-    _log.info("Starting training for %s (epochs=%d)", model_name, epochs)
+    _log.info("Starting training for %s (epochs=%d, model_key=%s)", model_name, epochs, model_key)
     _ensure_log_dir()
     pid_path = _pid_file(model_name)
     if pid_path.exists():
@@ -67,23 +68,41 @@ def start_training(
         _log.warning("Stale PID file found for %s — removing before start", model_name)
         pid_path.unlink(missing_ok=True)
 
-    script = Path(settings.scripts_path) / "train_hime.py"
-    if not script.exists():
-        raise FileNotFoundError(f"Training script not found: {script}")
-
     log = _log_file(model_name)
-    cmd = [
-        "conda", "run", "-n", conda_env,
-        "python", str(script),
-        "--num_train_epochs", str(epochs),
-        "--log-file", log,
-    ]
 
-    if resume_checkpoint:
-        full_cp = _checkpoint_dir(model_name) / resume_checkpoint
-        if not full_cp.exists():
-            raise FileNotFoundError(f"Checkpoint not found: {full_cp}")
-        cmd += ["--resume_from_checkpoint", str(full_cp)]
+    if model_key:
+        # Use train_generic.py for multi-model support
+        script = Path(settings.scripts_path) / "train_generic.py"
+        if not script.exists():
+            raise FileNotFoundError(f"Generic training script not found: {script}")
+        cmd = [
+            "conda", "run", "-n", conda_env,
+            "python", str(script),
+            "--model", model_key,
+            "--run-name", model_name,
+            "--epochs", str(epochs),
+            "--log-file", log,
+        ]
+        if resume_checkpoint:
+            full_cp = _checkpoint_dir(model_name) / resume_checkpoint
+            if not full_cp.exists():
+                raise FileNotFoundError(f"Checkpoint not found: {full_cp}")
+            cmd += ["--resume", str(full_cp)]
+    else:
+        script = Path(settings.scripts_path) / "train_hime.py"
+        if not script.exists():
+            raise FileNotFoundError(f"Training script not found: {script}")
+        cmd = [
+            "conda", "run", "-n", conda_env,
+            "python", str(script),
+            "--num_train_epochs", str(epochs),
+            "--log-file", log,
+        ]
+        if resume_checkpoint:
+            full_cp = _checkpoint_dir(model_name) / resume_checkpoint
+            if not full_cp.exists():
+                raise FileNotFoundError(f"Checkpoint not found: {full_cp}")
+            cmd += ["--resume_from_checkpoint", str(full_cp)]
 
     proc = subprocess.Popen(
         cmd,

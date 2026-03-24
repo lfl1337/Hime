@@ -209,6 +209,50 @@ def get_hardware_stats() -> HardwareStats:
     )
 
 
+# ---------------------------------------------------------------------------
+# Memory detail
+# ---------------------------------------------------------------------------
+
+class MemoryDetail(BaseModel):
+    process_rss_mb: float
+    process_vms_mb: float
+    system_total_gb: float
+    system_available_gb: float
+    system_used_pct: float
+    pagefile_total_gb: float
+    pagefile_used_gb: float
+    pagefile_used_pct: float
+    top_processes: list[dict]  # [{name, pid, rss_mb}]
+
+
+def get_memory_detail() -> MemoryDetail:
+    """Collect detailed memory breakdown: Python process, system, pagefile, top processes."""
+    import os
+    vm = psutil.virtual_memory()
+    sw = psutil.swap_memory()
+    me = psutil.Process(os.getpid())
+    mi = me.memory_info()
+    procs = []
+    for p in psutil.process_iter(['name', 'pid', 'memory_info']):
+        try:
+            rss = p.info['memory_info'].rss / 1024 / 1024
+            procs.append({'name': p.info['name'], 'pid': p.info['pid'], 'rss_mb': round(rss, 1)})
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    top5 = sorted(procs, key=lambda x: x['rss_mb'], reverse=True)[:5]
+    return MemoryDetail(
+        process_rss_mb=round(mi.rss / 1024 / 1024, 1),
+        process_vms_mb=round(mi.vms / 1024 / 1024, 1),
+        system_total_gb=round(vm.total / 1024**3, 1),
+        system_available_gb=round(vm.available / 1024**3, 1),
+        system_used_pct=round(vm.percent, 1),
+        pagefile_total_gb=round(sw.total / 1024**3, 1),
+        pagefile_used_gb=round(sw.used / 1024**3, 1),
+        pagefile_used_pct=round(sw.percent, 1),
+        top_processes=top5,
+    )
+
+
 def save_hardware_stats(stats: HardwareStats) -> None:
     """Insert one hardware stats row into SQLite (sync, thread-safe)."""
     db = _db_path()

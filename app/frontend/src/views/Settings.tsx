@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { openUrl as openerOpenUrl } from '@tauri-apps/plugin-opener'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { useTheme } from '@/App'
-import { getTrainingConfig, updateTrainingConfig, getCondaEnvs } from '@/api/training'
+import { getTrainingConfig, updateTrainingConfig, getCondaEnvs, getMemoryDetail } from '@/api/training'
+import type { MemoryDetail } from '@/api/training'
+import { connectionRegistry } from '@/utils/connectionRegistry'
+import type { Connection } from '@/utils/connectionRegistry'
 import { getEpubSettings, updateEpubSetting } from '@/api/epub'
 import { getHealthInfo } from '@/api/client'
 
@@ -260,6 +263,13 @@ export function Settings() {
   const [scriptsPath, setScriptsPath] = useState('')
   const [epubFolder, setEpubFolder] = useState('')
 
+  // Memory & Performance
+  const [memDetail, setMemDetail] = useState<MemoryDetail | null>(null)
+  const [jsHeap, setJsHeap] = useState<{ used: number; total: number; limit: number } | null>(null)
+  const [debugState, setDebugState] = useState<Record<string, number>>({})
+  const [connections, setConnections] = useState<Connection[]>([])
+  const heapHistory = useRef<{ ts: number; used: number }[]>([])
+
   // About
   const [backendVersion, setBackendVersion] = useState<string | null>(null)
   const [urlToast, setUrlToast] = useState<string | null>(null)
@@ -273,6 +283,33 @@ export function Settings() {
   }
 
   useEffect(() => () => { if (urlToastTimer.current) clearTimeout(urlToastTimer.current) }, [])
+
+  // Memory profiler: JS heap + debug state every 5s, system memory every 10s
+  useEffect(() => {
+    function refreshFast() {
+      const mem = (performance as any).memory
+      if (mem) {
+        const entry = { ts: Date.now(), used: mem.usedJSHeapSize / 1024 / 1024 }
+        heapHistory.current = [...heapHistory.current.slice(-11), entry]
+        setJsHeap({
+          used: Math.round(mem.usedJSHeapSize / 1024 / 1024),
+          total: Math.round(mem.totalJSHeapSize / 1024 / 1024),
+          limit: Math.round(mem.jsHeapSizeLimit / 1024 / 1024),
+        })
+      }
+      setDebugState({ ...((window as any).__himeDebug ?? {}) })
+      setConnections(connectionRegistry.getAll())
+    }
+    refreshFast()
+    const fastId = setInterval(refreshFast, 5_000)
+
+    getMemoryDetail().then(setMemDetail).catch(() => {})
+    const slowId = setInterval(() => {
+      getMemoryDetail().then(setMemDetail).catch(() => {})
+    }, 10_000)
+
+    return () => { clearInterval(fastId); clearInterval(slowId) }
+  }, [])
 
   useEffect(() => {
     getTrainingConfig().then(cfg => {
@@ -386,6 +423,149 @@ export function Settings() {
           initialValue={scriptsPath}
           onSave={v => updateTrainingConfig('scripts_path', v).then(cfg => setScriptsPath(cfg.scripts_path))}
         />
+      </Section>
+
+      {/* ── Memory & Performance ───────────────────────────────────────── */}
+      <Section title="Memory & Performance">
+        {/* Frontend Memory */}
+        <div className="px-4 py-3 space-y-2">
+          <div className="text-xs font-medium text-zinc-400 mb-2">Frontend Memory (WebView2)</div>
+          {jsHeap ? (
+            <>
+              <div className="flex justify-between text-xs text-zinc-400">
+                <span>JS Heap</span>
+                <span>{jsHeap.used} / {jsHeap.total} MB (limit: {jsHeap.limit} MB)</span>
+              </div>
+              <div className="w-full bg-zinc-800 rounded-full h-1.5">
+                <div
+                  className={`h-1.5 rounded-full transition-all ${
+                    jsHeap.total / jsHeap.limit > 0.8 ? 'bg-red-500' :
+                    jsHeap.total / jsHeap.limit > 0.5 ? 'bg-yellow-500' : 'bg-green-500'
+                  }`}
+                  style={{ width: `${Math.min((jsHeap.total / jsHeap.limit) * 100, 100)}%` }}
+                />
+              </div>
+              {(() => {
+                const h = heapHistory.current
+                if (h.length >= 2) {
+                  const oldest = h[0], newest = h[h.length - 1]
+                  const mins = (newest.ts - oldest.ts) / 60_000
+                  const rate = mins > 0 ? (newest.used - oldest.used) / mins : 0
+                  return (
+                    <div className="text-xs text-zinc-500">
+                      Growth: {rate >= 0 ? '+' : ''}{rate.toFixed(1)} MB/min
+                    </div>
+                  )
+                }
+                return null
+              })()}
+              {typeof (window as any).gc === 'function' && (
+                <button
+                  onClick={() => (window as any).gc()}
+                  className="mt-1 px-2.5 py-1 text-xs rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+                >
+                  Force GC
+                </button>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-zinc-600">performance.memory not available in this environment</p>
+          )}
+        </div>
+
+        {/* React State sizes */}
+        {Object.keys(debugState).length > 0 && (
+          <div className="px-4 py-3 space-y-1">
+            <div className="text-xs font-medium text-zinc-400 mb-2">React State (TrainingMonitor)</div>
+            {Object.entries(debugState).map(([k, v]) => (
+              <div key={k} className="flex justify-between text-xs">
+                <span className="text-zinc-500">{k.replace(/Length$/, '').replace(/([A-Z])/g, ' $1').trim()}</span>
+                <span className="text-zinc-400 font-mono">{v}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Active Connections */}
+        <div className="px-4 py-3">
+          <div className="text-xs font-medium text-zinc-400 mb-2">Active Connections</div>
+          {connections.length === 0 ? (
+            <p className="text-xs text-zinc-600">No active connections</p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-zinc-600">
+                  <th className="text-left py-1">ID</th>
+                  <th className="text-left py-1">Type</th>
+                  <th className="text-right py-1">Events</th>
+                  <th className="text-right py-1">Bytes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {connections.map(c => (
+                  <tr key={c.id} className="text-zinc-400 border-t border-zinc-800">
+                    <td className="py-1 font-mono truncate max-w-[120px]">{c.id}</td>
+                    <td className="py-1">{c.type}</td>
+                    <td className="py-1 text-right">{c.eventCount}</td>
+                    <td className="py-1 text-right">{(c.bytesReceived / 1024).toFixed(1)} KB</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* System Memory */}
+        {memDetail && (
+          <div className="px-4 py-3 space-y-3">
+            <div className="text-xs font-medium text-zinc-400 mb-2">System Memory</div>
+            <div>
+              <div className="flex justify-between text-xs text-zinc-400 mb-1">
+                <span>System RAM</span>
+                <span>{memDetail.system_used_pct}% — {(memDetail.system_total_gb - memDetail.system_available_gb).toFixed(1)} / {memDetail.system_total_gb} GB</span>
+              </div>
+              <div className="w-full bg-zinc-800 rounded-full h-1.5">
+                <div
+                  className={`h-1.5 rounded-full ${memDetail.system_used_pct > 80 ? 'bg-red-500' : memDetail.system_used_pct > 50 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                  style={{ width: `${memDetail.system_used_pct}%` }}
+                />
+              </div>
+            </div>
+            {memDetail.pagefile_total_gb > 0 && (
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-1">
+                  <span>Pagefile</span>
+                  <span>{memDetail.pagefile_used_pct}% — {memDetail.pagefile_used_gb.toFixed(1)} / {memDetail.pagefile_total_gb.toFixed(1)} GB</span>
+                </div>
+                <div className="w-full bg-zinc-800 rounded-full h-1.5">
+                  <div
+                    className={`h-1.5 rounded-full ${memDetail.pagefile_used_pct > 80 ? 'bg-red-500' : memDetail.pagefile_used_pct > 50 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+                    style={{ width: `${memDetail.pagefile_used_pct}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            <div className="flex justify-between text-xs">
+              <span className="text-zinc-500">Backend Python RSS</span>
+              <span className="text-zinc-400 font-mono">{memDetail.process_rss_mb} MB</span>
+            </div>
+            {memDetail.top_processes.length > 0 && (
+              <div>
+                <div className="text-xs text-zinc-600 mb-1">Top processes by RSS</div>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {memDetail.top_processes.map((p, i) => (
+                      <tr key={i} className="text-zinc-400">
+                        <td className="py-0.5 font-mono truncate max-w-[180px]">{p.name}</td>
+                        <td className="py-0.5 text-right text-zinc-500">{p.rss_mb} MB</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </Section>
 
       {/* ── About ──────────────────────────────────────────────────────── */}

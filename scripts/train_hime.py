@@ -325,7 +325,7 @@ def save_adapter(model, tokenizer):
     print(f"  nächstes Modell trainieren!")
 
 
-def main():
+def main(resume_from_checkpoint=None):
     import gc
 
     # Memory / parallelism settings — must be set before any CUDA allocation
@@ -359,7 +359,12 @@ def main():
     model, tokenizer = load_model()
 
     # LoRA hinzufügen
-    model, tokenizer, resume_from = apply_lora(model, tokenizer)
+    model, tokenizer, auto_resume = apply_lora(model, tokenizer)
+
+    # CLI --resume_from_checkpoint takes priority over auto-detected checkpoint
+    resume_from = resume_from_checkpoint if resume_from_checkpoint is not None else auto_resume
+    if resume_from_checkpoint is not None:
+        print(f"[i]  Resume override via CLI: {resume_from_checkpoint}")
 
     # Training
     trainer = train(model, tokenizer, train_dataset, eval_dataset, resume_from)
@@ -404,6 +409,7 @@ if __name__ == "__main__":
 
     _parser = argparse.ArgumentParser(add_help=False)
     _parser.add_argument("--log-file", default=None)
+    _parser.add_argument("--resume_from_checkpoint", default=None)
     _args, _ = _parser.parse_known_args()
     if _args.log_file:
         Path(_args.log_file).parent.mkdir(parents=True, exist_ok=True)
@@ -411,4 +417,4 @@ if __name__ == "__main__":
         sys.stdout = TeeOutput(sys.stdout, _log_fh)
         sys.stderr = TeeOutput(sys.stderr, _log_fh)
 
-    main()
+    main(resume_from_checkpoint=_args.resume_from_checkpoint)

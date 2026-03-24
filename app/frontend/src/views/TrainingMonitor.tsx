@@ -16,6 +16,7 @@ import {
   fetchAllRuns,
   fetchGGUFModels,
   getBackendLog,
+  getCondaEnvs,
   getCheckpoints,
   getHardwareHistory,
   getHardwareStats,
@@ -193,6 +194,7 @@ export function TrainingMonitor() {
   const [condaEnv, setCondaEnv] = useState<string>(() =>
     localStorage.getItem('hime_default_conda_env') ?? 'hime'
   )
+  const [condaEnvs, setCondaEnvs] = useState<string[] | null>(null)
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<string | null>(null)
   const [runningProcesses, setRunningProcesses] = useState<TrainingProcess[]>([])
   const [controlError, setControlError] = useState<string | null>(null)
@@ -214,6 +216,8 @@ export function TrainingMonitor() {
       setLoadError('Request timed out after 10 seconds — check that the backend is running.')
       setRunsLoaded(true)
     }, 10_000)
+
+    getCondaEnvs().then(envs => setCondaEnvs(envs)).catch(() => {})
 
     Promise.allSettled([fetchAllRuns(), fetchGGUFModels(), getRunningProcesses()]).then(([runsResult, ggufResult, procResult]) => {
       clearTimeout(timeoutId)
@@ -750,12 +754,24 @@ export function TrainingMonitor() {
                 </div>
                 <div>
                   <label className="block text-xs text-zinc-500 mb-1">Conda env</label>
-                  <input
-                    type="text"
-                    value={condaEnv}
-                    onChange={e => setCondaEnv(e.target.value)}
-                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
-                  />
+                  {condaEnvs ? (
+                    <select
+                      value={condaEnv}
+                      onChange={e => setCondaEnv(e.target.value)}
+                      className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                    >
+                      {(condaEnvs.includes(condaEnv) ? condaEnvs : [condaEnv, ...condaEnvs]).map(env => (
+                        <option key={env} value={env}>{env}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={condaEnv}
+                      onChange={e => setCondaEnv(e.target.value)}
+                      className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                    />
+                  )}
                 </div>
               </div>
               <button

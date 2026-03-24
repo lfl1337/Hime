@@ -1,4 +1,6 @@
 """Training monitor endpoints."""
+import json
+import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -194,6 +196,21 @@ async def update_training_config(body: TrainingConfigUpdate) -> dict:
         "training_log_path": settings.training_log_path,
         "scripts_path": settings.scripts_path,
     }
+
+
+@router.get("/conda-envs")
+async def list_conda_envs() -> dict:
+    """List available conda environment names."""
+    try:
+        result = subprocess.run(
+            ["conda", "env", "list", "--json"],
+            capture_output=True, text=True, timeout=10,
+        )
+        data = json.loads(result.stdout)
+        envs = [Path(p).name for p in data.get("envs", [])]
+        return {"envs": envs if envs else ["hime"]}
+    except Exception:
+        return {"envs": ["hime"]}
 
 
 @router.get("/backend-log")

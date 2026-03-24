@@ -321,8 +321,9 @@ async def scan_watch_folder(folder_path: str, session: AsyncSession) -> list[str
         try:
             await import_epub(full_path, session)
             imported.append(full_path)
-        except Exception:
-            pass  # log silently; don't break the scan
+        except Exception as e:
+            import logging
+            logging.warning(f"[epub] Failed to auto-import {full_path}: {e}")
     return imported
 
 

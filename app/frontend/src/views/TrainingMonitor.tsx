@@ -169,6 +169,16 @@ function tempColor(celsius: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Downsample — reduce an array to at most maxPoints entries
+// ---------------------------------------------------------------------------
+
+function downsample<T>(data: T[], maxPoints: number): T[] {
+  if (data.length <= maxPoints) return data
+  const step = Math.ceil(data.length / maxPoints)
+  return data.filter((_, i) => i % step === 0)
+}
+
+// ---------------------------------------------------------------------------
 // Model → LoRA output directory mapping
 // ---------------------------------------------------------------------------
 
@@ -468,19 +478,23 @@ export function TrainingMonitor() {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logLines])
 
-  // Chart data: last 500 train points + all eval points
+  // Chart data: downsample to ≤200 points to cap SVG DOM node count
   const chartData = useMemo(() => {
     const evalSteps = new Set(lossHistory.filter(p => p.eval_loss !== null).map(p => p.step))
     const trainPoints = lossHistory.filter(p => p.train_loss !== null).slice(-500)
     const trainSteps = new Set(trainPoints.map(p => p.step))
-    return lossHistory
+    const merged = lossHistory
       .filter(p => trainSteps.has(p.step) || evalSteps.has(p.step))
       .map(p => ({
         step: p.step,
         train_loss: trainSteps.has(p.step) ? p.train_loss : null,
         eval_loss: p.eval_loss,
       }))
+    return downsample(merged, 200)
   }, [lossHistory])
+
+  // Hardware chart data: already capped at 60, memoized to avoid object churn
+  const hwChartData = useMemo(() => downsample(hwHistory, 60), [hwHistory])
 
   const { copied, copy } = useCopyToClipboard()
 
@@ -734,11 +748,11 @@ export function TrainingMonitor() {
         </div>
 
         {/* HW History Chart */}
-        {hwHistory.length > 1 && (
+        {hwChartData.length > 1 && (
           <div className="mt-4">
             <div className="text-xs text-zinc-600 mb-1">Last {hwHistory.length} samples</div>
             <ResponsiveContainer width="100%" height={120}>
-              <ComposedChart data={hwHistory} margin={{ top: 2, right: 8, bottom: 2, left: 0 }}>
+              <ComposedChart data={hwChartData} margin={{ top: 2, right: 8, bottom: 2, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                 <XAxis dataKey="timestamp" hide />
                 <YAxis domain={[0, 100]} width={28} tick={{ fill: '#71717a', fontSize: 10 }} />
@@ -1001,6 +1015,7 @@ export function TrainingMonitor() {
                   name="Train loss"
                   stroke="#7C6FCD"
                   dot={false}
+                  activeDot={false}
                   isAnimationActive={false}
                   connectNulls={false}
                 />
@@ -1009,7 +1024,8 @@ export function TrainingMonitor() {
                   dataKey="eval_loss"
                   name="Eval loss"
                   stroke="#F0997B"
-                  dot={{ r: 3, fill: '#F0997B' }}
+                  dot={false}
+                  activeDot={false}
                   isAnimationActive={false}
                   connectNulls={false}
                 />
@@ -1158,6 +1174,7 @@ export function TrainingMonitor() {
               ) : (
                 logLines
                   .filter(entry => logFilter === 'all' || entry.type === logFilter)
+                  .slice(-20)
                   .map((entry, i) => (
                     <div key={i} className={`whitespace-pre-wrap break-all ${logLineClass(entry.type)}`}>
                       {entry.line}
@@ -1170,7 +1187,7 @@ export function TrainingMonitor() {
                   No backend log yet. Start the backend to generate log output.
                 </div>
               ) : (
-                backendLogLines.map((line, i) => {
+                backendLogLines.slice(-20).map((line, i) => {
                   const t = /\] ERROR\b|\] CRITICAL\b/.test(line) ? 'error' : 'info'
                   return (
                     <div key={i} className={`whitespace-pre-wrap break-all ${logLineClass(t)}`}>

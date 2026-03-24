@@ -18,7 +18,7 @@ os.environ["UNSLOTH_SKIP_TORCHVISION_CHECK"] = "1"
 import unsloth  # MUSS als erstes importiert werden!
 from unsloth import FastLanguageModel
 
-import json, torch
+import gc, json, torch
 from pathlib import Path
 from datasets import Dataset
 from transformers import TrainerCallback, TrainingArguments
@@ -130,12 +130,18 @@ def load_model():
     print(f"     Max Seq Len: {MAX_SEQ_LEN}")
 
     _load_start = _time.time()
+    # Free memory before loading to minimise peak pagefile pressure (OS Error 1455)
+    gc.collect()
+    torch.cuda.empty_cache()
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name      = MODEL_NAME,
         max_seq_length  = MAX_SEQ_LEN,
         dtype           = None,       # Auto: bfloat16 auf modernen GPUs
         load_in_4bit    = True,       # QLoRA
         trust_remote_code = True,
+        device_map      = "cuda:0",              # Load shards directly to GPU, skip CPU staging
+        low_cpu_mem_usage = True,                # Load one shard at a time — avoids mapping all to RAM
+        max_memory      = {0: "30GB", "cpu": "20GB"},  # Cap CPU RAM to prevent pagefile exhaustion
     )
     _load_time = _time.time() - _load_start
 
@@ -324,7 +330,7 @@ def main():
 
     # Memory / parallelism settings — must be set before any CUDA allocation
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:512")
 
     print("=" * 60)
     print(f"  Hime - Training Script")

@@ -69,21 +69,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await scan_watch_folder(folder, session)
     # Background tasks
     scan_task = asyncio.create_task(_scan_loop())
-    hw_task = asyncio.create_task(_hardware_loop())
+    # hw_task disabled: hardware background collection stopped for stability (v0.8.0)
+    # hw_task = asyncio.create_task(_hardware_loop())
     yield
     scan_task.cancel()
-    hw_task.cancel()
     with suppress(asyncio.CancelledError):
         await scan_task
-    with suppress(asyncio.CancelledError):
-        await hw_task
     _log.info("FastAPI lifespan shutdown")
 
 
 app = FastAPI(
     title="Hime Translation API",
     description="Local-first Japanese-to-English light novel translation",
-    version="0.7.9",
+    version="0.8.0",
     lifespan=lifespan,
 )
 
@@ -133,4 +131,4 @@ app.include_router(streaming.router)  # WebSocket — no /api/v1 prefix
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     """Liveness check — no auth required."""
-    return {"status": "ok", "app": "hime", "version": "0.7.9"}
+    return {"status": "ok", "app": "hime", "version": "0.8.0"}

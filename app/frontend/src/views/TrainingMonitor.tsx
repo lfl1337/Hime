@@ -126,6 +126,8 @@ export function TrainingMonitor() {
   const [controlError, setControlError] = useState<string | null>(null)
   const [confirmAction, setConfirmAction] = useState<'start' | 'stop' | null>(null)
   const [controlLoading, setControlLoading] = useState(false)
+  const [stopPollStart, setStopPollStart] = useState<number | null>(null)
+  const stopPollRef = useRef<number | null>(null)
 
   const isWindowVisible = useStore(s => s.isWindowVisible)
 
@@ -289,6 +291,10 @@ export function TrainingMonitor() {
         clearInterval(fallbackRef.current)
         fallbackRef.current = null
       }
+      if (stopPollRef.current !== null) {
+        clearInterval(stopPollRef.current)
+        stopPollRef.current = null
+      }
     }
   }, [selectedRun, isWindowVisible])
 
@@ -371,14 +377,29 @@ export function TrainingMonitor() {
     setControlError(null)
     try {
       await stopTraining(selectedRun)
-      const procs = await getRunningProcesses()
-      setRunningProcesses(procs)
     } catch (e) {
       setControlError(String(e))
-    } finally {
       setControlLoading(false)
       setConfirmAction(null)
+      return
     }
+    setConfirmAction(null)
+    const pollStart = Date.now()
+    setStopPollStart(pollStart)
+
+    // Poll /processes every 2s until gone or 30s timeout
+    stopPollRef.current = window.setInterval(async () => {
+      const procs = await getRunningProcesses().catch(() => null)
+      if (procs !== null) setRunningProcesses(procs)
+      const stillRunning = procs?.some(p => p.model_name === selectedRun) ?? true
+      const elapsed = Date.now() - pollStart
+      if (!stillRunning || elapsed > 30_000) {
+        clearInterval(stopPollRef.current!)
+        stopPollRef.current = null
+        setStopPollStart(null)
+        setControlLoading(false)
+      }
+    }, 2000)
   }
 
   // Loading / error / empty screen
@@ -491,7 +512,20 @@ export function TrainingMonitor() {
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
           <h3 className="text-sm font-medium text-zinc-400 mb-4">Training Controls</h3>
 
-          {runningProcess ? (
+          {controlLoading && stopPollStart !== null ? (
+            /* Stopping state — polling for process to die */
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-zinc-400 text-sm">
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-400" />
+                Stopping training…
+              </div>
+              {Date.now() - stopPollStart > 10_000 && (
+                <p className="text-yellow-400 text-xs">
+                  Still running — run in CMD: <span className="font-mono">taskkill /F /T /PID {runningProcess?.pid}</span>
+                </p>
+              )}
+            </div>
+          ) : runningProcess ? (
             /* Running state */
             <div className="space-y-3">
               <div className="flex items-center gap-2">

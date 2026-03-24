@@ -12,6 +12,26 @@ interface Props {
   chapter: ChapterSummary | null
 }
 
+function isRealTitle(title: string): boolean {
+  return !(/^Chapter \d+$/.test(title))
+}
+
+function getDisplayTitle(ch: ChapterSummary): string {
+  const chNum = ch.chapter_index + 1
+  const hasReal = isRealTitle(ch.title)
+
+  if (ch.is_front_matter) {
+    if (ch.chapter_index === 0) {
+      return hasReal ? ch.title : 'Front Matter'
+    }
+    return hasReal ? ch.title : `Section ${chNum}`
+  }
+
+  return hasReal
+    ? `Chapter ${chNum} — ${ch.title}`
+    : `Chapter ${chNum}`
+}
+
 export function TranslationWorkspace({ book, chapter }: Props) {
   const [paragraphs, setParagraphs] = useState<ParagraphInfo[]>([])
   const [activeJobId, setActiveJobId] = useState<number | null>(null)
@@ -134,7 +154,7 @@ export function TranslationWorkspace({ book, chapter }: Props) {
       {/* Top bar */}
       <div className="flex items-center gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900">
         <span className="text-xs text-zinc-500 truncate">
-          {book.title} → {chapter.title}
+          {book.title} → {getDisplayTitle(chapter)}
         </span>
         <div className="flex items-center gap-1 ml-auto shrink-0">
           <button
@@ -167,7 +187,7 @@ export function TranslationWorkspace({ book, chapter }: Props) {
       {/* Split pane */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left: Japanese source */}
-        <div className="w-1/2 flex flex-col border-r border-zinc-800 overflow-hidden" style={{ background: '#1a1814' }}>
+        <div className="w-1/2 flex flex-col border-r border-zinc-800 overflow-hidden min-h-0" style={{ background: '#1a1814' }}>
           <div className="p-4 flex-1 overflow-y-auto">
             {currentParagraph ? (
               <p className="text-lg leading-relaxed text-amber-50 jp-text font-serif">
@@ -178,7 +198,7 @@ export function TranslationWorkspace({ book, chapter }: Props) {
             )}
           </div>
           {/* Paragraph navigator */}
-          <div className="h-44 border-t border-zinc-800 p-2 overflow-hidden">
+          <div className="max-h-[180px] border-t border-zinc-800 p-2 overflow-y-auto">
             <ParagraphNavigator
               paragraphs={paragraphs}
               currentIndex={selectedParagraphIndex}

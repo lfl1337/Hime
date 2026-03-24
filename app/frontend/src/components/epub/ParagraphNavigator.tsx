@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { ParagraphInfo } from '@/api/epub'
 
 interface Props {
@@ -7,17 +8,20 @@ interface Props {
 }
 
 export function ParagraphNavigator({ paragraphs, currentIndex, onSelect }: Props) {
-  // Show 5 context paragraphs centered on current
-  const start = Math.max(0, currentIndex - 2)
-  const visible = paragraphs.slice(start, start + 5)
+  const activeRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [currentIndex])
 
   return (
-    <div className="overflow-y-auto space-y-1 pr-1">
-      {visible.map(p => {
+    <div className="overflow-y-auto h-full space-y-1 pr-1">
+      {paragraphs.map(p => {
         const isCurrent = p.paragraph_index === currentIndex
         return (
           <button
             key={p.id}
+            ref={isCurrent ? activeRef : null}
             onClick={() => onSelect(p.paragraph_index)}
             className={`w-full text-left text-xs rounded-lg px-2 py-1.5 transition-colors leading-snug ${
               isCurrent

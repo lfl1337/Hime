@@ -11,6 +11,7 @@ from ..services.epub_service import (
     get_paragraphs,
     get_setting,
     import_epub,
+    rescan_book_chapters,
     save_translation,
     set_setting,
 )
@@ -82,6 +83,19 @@ async def api_export_chapter(
 ) -> dict:
     text = await export_chapter(chapter_id, format, session)
     return {"content": text}
+
+
+@router.post("/books/{book_id}/rescan", status_code=status.HTTP_200_OK)
+async def api_rescan_book(
+    book_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    try:
+        return await rescan_book_chapters(book_id, session)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
 
 
 @router.get("/settings")

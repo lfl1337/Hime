@@ -69,6 +69,40 @@ def _is_valid_title(title: str, book_title: str) -> bool:
     return True
 
 
+def _split_by_headings(soup, book_title: str, spine_idx: int) -> list[dict]:
+    """Split a single large document into sub-chapters at h1/h2 boundaries."""
+    sub_chapters: list[dict] = []
+    current_title: str | None = None
+    current_paragraphs: list[str] = []
+
+    def flush() -> None:
+        if current_paragraphs:
+            sub_chapters.append({
+                "title": current_title or f"Chapter {spine_idx + 1}.{len(sub_chapters) + 1}",
+                "paragraphs": current_paragraphs[:],
+                "is_front_matter": len(current_paragraphs) < 3,
+            })
+
+    body = soup.select_one("body") or soup
+    for elem in body.children:
+        if not hasattr(elem, 'name') or elem.name is None:
+            continue
+        local = elem.name.split('}')[-1] if '}' in elem.name else elem.name
+        if local in ('h1', 'h2', 'h3'):
+            flush()
+            current_title = elem.get_text(strip=True).replace('\u3000', ' ') or None
+            current_paragraphs = []
+        elif local == 'p':
+            text = elem.get_text(separator="\n").strip()
+            if len(text) >= 10:
+                if len(text) > 500:
+                    current_paragraphs.extend(_split_sentences(text))
+                else:
+                    current_paragraphs.append(text)
+    flush()
+    return sub_chapters
+
+
 def _parse_epub_sync(file_path: str) -> dict:
     """Synchronous EPUB parsing — run inside asyncio.to_thread."""
     import ebooklib
@@ -117,7 +151,7 @@ def _parse_epub_sync(file_path: str) -> dict:
 
         # 2. HTML <title> tag
         if not chapter_title or not _is_valid_title(chapter_title, title):
-            title_tag = soup.find('title')
+            title_tag = soup.select_one("title")
             if title_tag:
                 candidate = title_tag.get_text(strip=True).replace('\u3000', ' ')
                 if _is_valid_title(candidate, title):
@@ -125,13 +159,11 @@ def _parse_epub_sync(file_path: str) -> dict:
 
         # 3. First heading tag (h1 > h2 > h3)
         if not chapter_title or not _is_valid_title(chapter_title, title):
-            for tag in ['h1', 'h2', 'h3']:
-                heading = soup.find(tag)
-                if heading:
-                    candidate = heading.get_text(strip=True).replace('\u3000', ' ')
-                    if _is_valid_title(candidate, title):
-                        chapter_title = candidate
-                        break
+            heading = soup.select_one("h1, h2, h3")
+            if heading:
+                candidate = heading.get_text(strip=True).replace('\u3000', ' ')
+                if _is_valid_title(candidate, title):
+                    chapter_title = candidate
 
         # 4. Fallback
         if not chapter_title or not _is_valid_title(chapter_title, title):
@@ -139,12 +171,21 @@ def _parse_epub_sync(file_path: str) -> dict:
 
         # Paragraphs: collect per <p> tag, then filter/chunk
         raw_paragraphs: list[str] = []
-        for p_tag in soup.find_all("p"):
+        for p_tag in soup.select("p"):
             text = p_tag.get_text(separator="\n").strip()
             if len(text) >= 10:
                 raw_paragraphs.append(text)
 
-        # Fallback: split on double newlines if no <p> tags found
+        # Fallback: split on double <br> if no <p> tags found
+        if not raw_paragraphs:
+            raw_html = item.get_content().decode("utf-8", errors="replace")
+            chunks = re.split(r'<br\s*/?\s*>\s*(?:\n\s*)?<br\s*/?\s*>', raw_html, flags=re.IGNORECASE)
+            for chunk in chunks:
+                text = re.sub(r'<[^>]+>', '', chunk).strip()
+                if len(text) >= 10:
+                    raw_paragraphs.append(text)
+
+        # Final fallback: split on double newlines
         if not raw_paragraphs:
             plain = soup.get_text(separator="\n")
             raw_paragraphs = [p.strip() for p in plain.split("\n\n") if len(p.strip()) >= 10]
@@ -156,6 +197,15 @@ def _parse_epub_sync(file_path: str) -> dict:
                 paragraphs.extend(_split_sentences(raw))
             else:
                 paragraphs.append(raw)
+
+        # If one spine item contains an entire novel (>200 paragraphs), split by headings
+        if len(paragraphs) > 200:
+            sub_chapters = _split_by_headings(soup, title, idx)
+            if len(sub_chapters) > 1:
+                chapters.extend(sub_chapters)
+                continue
+            import logging
+            logging.warning(f"[epub] Spine item {item_filename} has {len(paragraphs)} paragraphs — consider re-splitting")
 
         if paragraphs:
             chapters.append({
@@ -208,6 +258,45 @@ async def import_epub(file_path: str, session: AsyncSession) -> dict:
         session.add(chapter)
         await session.flush()  # get chapter.id
 
+        for p_idx, p_text in enumerate(ch_data["paragraphs"]):
+            session.add(Paragraph(
+                chapter_id=chapter.id,
+                paragraph_index=p_idx,
+                source_text=p_text,
+            ))
+
+    await session.commit()
+    await session.refresh(book)
+    return _book_to_dict(book)
+
+
+async def rescan_book_chapters(book_id: int, session: AsyncSession) -> dict:
+    """Delete all chapters/paragraphs for a book and re-parse the EPUB."""
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise ValueError(f"Book {book_id} not found")
+
+    result = await session.execute(select(Chapter).where(Chapter.book_id == book_id))
+    for ch in result.scalars().all():
+        await session.delete(ch)
+    await session.flush()
+
+    parsed = await asyncio.to_thread(_parse_epub_sync, book.file_path)
+    book.total_chapters = len(parsed["chapters"])
+    book.total_paragraphs = sum(len(c["paragraphs"]) for c in parsed["chapters"])
+    book.translated_paragraphs = 0
+    book.status = "not_started"
+
+    for ch_idx, ch_data in enumerate(parsed["chapters"]):
+        chapter = Chapter(
+            book_id=book.id,
+            chapter_index=ch_idx,
+            title=ch_data["title"],
+            total_paragraphs=len(ch_data["paragraphs"]),
+            is_front_matter=ch_data["is_front_matter"],
+        )
+        session.add(chapter)
+        await session.flush()
         for p_idx, p_text in enumerate(ch_data["paragraphs"]):
             session.add(Paragraph(
                 chapter_id=chapter.id,

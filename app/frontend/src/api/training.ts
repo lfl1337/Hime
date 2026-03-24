@@ -176,6 +176,19 @@ export async function getBackendLog(lines = 50): Promise<{ lines: string[] }> {
   return res.json() as Promise<{ lines: string[] }>
 }
 
+export interface TrainingConfig {
+  models_base_path: string
+  lora_path: string
+  training_log_path: string
+  scripts_path: string
+}
+
+export async function getTrainingConfig(): Promise<TrainingConfig> {
+  const res = await apiFetch('/api/v1/training/config')
+  if (!res.ok) throw new Error(`training/config failed: ${res.statusText}`)
+  return res.json() as Promise<TrainingConfig>
+}
+
 // ---------------------------------------------------------------------------
 // Hardware monitoring
 // ---------------------------------------------------------------------------

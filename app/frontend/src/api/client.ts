@@ -106,6 +106,12 @@ export async function createWebSocket(jobId: number): Promise<WebSocket> {
   return new WebSocket(`ws://127.0.0.1:${port}/ws/translate/${jobId}`)
 }
 
+export async function getHealthInfo(): Promise<{ status: string; app: string; version: string }> {
+  const res = await apiFetch('/health')
+  if (!res.ok) throw new Error('health check failed')
+  return res.json() as Promise<{ status: string; app: string; version: string }>
+}
+
 export async function checkBackendOnline(): Promise<boolean> {
   try {
     const baseUrl = await getBaseUrl()

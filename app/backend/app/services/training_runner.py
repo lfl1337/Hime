@@ -12,6 +12,15 @@ from ..config import settings
 
 _log = logging.getLogger(__name__)
 
+# Maps model_key → canonical LoRA output directory name (must match frontend MODEL_TO_LORA_DIR)
+MODEL_KEY_TO_RUN_NAME: dict[str, str] = {
+    'qwen32b':  'Qwen2.5-32B-Instruct',
+    'qwen14b':  'Qwen2.5-14B-Instruct',
+    'qwen72b':  'Qwen2.5-72B-Instruct',
+    'gemma27b': 'Gemma-3-27B-IT',
+    'deepseek': 'DeepSeek-R1-Distill-Qwen-32B',
+}
+
 
 class TrainingProcess(BaseModel):
     model_name: str
@@ -57,6 +66,14 @@ def start_training(
     conda_env: str = "hime",
     model_key: str | None = None,
 ) -> TrainingProcess:
+    # If model_key is provided, enforce the canonical run name so PID/log/checkpoint
+    # paths are consistent regardless of what model_name the caller passed.
+    if model_key and model_key in MODEL_KEY_TO_RUN_NAME:
+        canonical = MODEL_KEY_TO_RUN_NAME[model_key]
+        if model_name != canonical:
+            _log.info("Correcting model_name %r → %r for model_key %r", model_name, canonical, model_key)
+            model_name = canonical
+
     _log.info("Starting training for %s (epochs=%d, model_key=%s)", model_name, epochs, model_key)
     _ensure_log_dir()
     pid_path = _pid_file(model_name)

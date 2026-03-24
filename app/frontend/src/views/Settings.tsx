@@ -306,7 +306,7 @@ export function Settings() {
     getMemoryDetail().then(setMemDetail).catch(() => {})
     const slowId = setInterval(() => {
       getMemoryDetail().then(setMemDetail).catch(() => {})
-    }, 10_000)
+    }, 30_000)
 
     return () => { clearInterval(fastId); clearInterval(slowId) }
   }, [])

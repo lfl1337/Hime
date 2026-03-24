@@ -28,9 +28,16 @@ DEFAULT_WATCH_FOLDER = "C:/Projekte/Hime/data/epubs/"
 async def _scan_loop() -> None:
     while True:
         await asyncio.sleep(60)
+        _log.debug("EPUB scan starting...")
+        t0 = time.perf_counter()
         async with AsyncSessionLocal() as session:
             folder = await get_setting("epub_watch_folder", session) or DEFAULT_WATCH_FOLDER
             await scan_watch_folder(folder, session)
+        elapsed = time.perf_counter() - t0
+        if elapsed > 10:
+            _log.warning("EPUB scan took %.1fs (>10s)", elapsed)
+        else:
+            _log.debug("EPUB scan complete in %.2fs, next in 60s", elapsed)
 
 
 async def _hardware_loop() -> None:
@@ -81,7 +88,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="Hime Translation API",
     description="Local-first Japanese-to-English light novel translation",
-    version="0.9.1",
+    version="0.9.2",
     lifespan=lifespan,
 )
 
@@ -131,4 +138,4 @@ app.include_router(streaming.router)  # WebSocket — no /api/v1 prefix
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     """Liveness check — no auth required."""
-    return {"status": "ok", "app": "hime", "version": "0.9.1"}
+    return {"status": "ok", "app": "hime", "version": "0.9.2"}

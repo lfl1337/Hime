@@ -1,6 +1,7 @@
 """Centralized logging for the Hime backend."""
 import logging
 import logging.handlers
+import os
 import sys
 from pathlib import Path
 
@@ -37,14 +38,19 @@ def setup_logging(log_dir: Path, *, dev: bool = True) -> None:
     ch.setFormatter(_ColourFormatter(_FMT, datefmt=_DFMT))
     root.addHandler(ch)
 
-    # File — DEBUG+ always, rotating 10 MB × 5 backups
+    # File — INFO+ by default (DEBUG+ only when DEBUG=true), rotating 5 MB × 3 backups
     log_dir.mkdir(parents=True, exist_ok=True)
     fh = logging.handlers.RotatingFileHandler(
         log_dir / "hime-backend.log",
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
         encoding="utf-8",
     )
-    fh.setLevel(logging.DEBUG)
+    file_level = logging.DEBUG if os.getenv("DEBUG", "").lower() == "true" else logging.INFO
+    fh.setLevel(file_level)
     fh.setFormatter(logging.Formatter(_FMT, datefmt=_DFMT))
     root.addHandler(fh)
+
+    # Silence extremely verbose third-party loggers
+    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+    logging.getLogger("hime.requests").setLevel(logging.WARNING)

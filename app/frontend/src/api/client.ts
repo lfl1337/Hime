@@ -81,34 +81,36 @@ export async function getApiKey(): Promise<string> {
   try {
     const { appDataDir } = await import('@tauri-apps/api/path')
     const dir = await appDataDir()
-    const content = await tryReadFile(`${dir}.env`)
+    const envPath = `${dir}.env`
+    console.log(`[client] getApiKey: reading ${envPath}`)
+    const content = await tryReadFile(envPath)
     if (content) {
+      console.log(`[client] getApiKey: .env read OK (${content.length} bytes)`)
       const match = content.match(/^API_KEY\s*=\s*(.+)$/m)
       if (match) {
         cachedApiKey = match[1].trim()
-        console.log('[client] API key loaded from AppData .env')
+        console.log(`[client] getApiKey: API_KEY found (length=${cachedApiKey.length})`)
         return cachedApiKey
       }
-      console.warn('[client] AppData .env: no API_KEY= line matched')
+      console.warn('[client] getApiKey: .env exists but has no API_KEY= line. Content preview:', content.slice(0, 200))
+    } else {
+      console.warn(`[client] getApiKey: .env not found or empty at ${envPath}`)
     }
   } catch (err) {
-    console.debug('[client] appDataDir() unavailable for .env:', err)
+    console.warn('[client] getApiKey: appDataDir() failed:', err)
   }
-
-  console.warn('[client] Tauri fs could not read .env — checking localStorage')
 
   // Fallback: localStorage (set once via setApiKey() or browser console)
   const stored = localStorage.getItem('hime_api_key')
   if (stored) {
-    console.log('[client] API key loaded from localStorage')
+    console.log('[client] getApiKey: loaded from localStorage')
     cachedApiKey = stored
     return stored
   }
 
   console.error(
-    '[client] No API key found — requests will fail with 401.\n' +
-    'Run in the browser console:\n' +
-    '  localStorage.setItem("hime_api_key", "<API_KEY from backend/.env>")',
+    '[client] getApiKey: no API key found — requests will fail with 401.\n' +
+    'Fix: localStorage.setItem("hime_api_key", "<value of API_KEY from %APPDATA%\\dev.hime.app\\.env>")',
   )
   return ''
 }

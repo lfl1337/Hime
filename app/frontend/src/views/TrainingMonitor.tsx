@@ -83,6 +83,8 @@ function pipelineRoleStyle(role: string | null): string {
 
 export function TrainingMonitor() {
   const [runs, setRuns] = useState<RunInfo[]>([])
+  const [runsLoaded, setRunsLoaded] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedRun, setSelectedRun] = useState<string | null>(null)
   const [ggufModels, setGgufModels] = useState<GGUFModelInfo[]>([])
   const [runLoading, setRunLoading] = useState(false)
@@ -101,14 +103,26 @@ export function TrainingMonitor() {
 
   // Mount effect: fetch runs and GGUF models in parallel, then select first run
   useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setLoadError('Request timed out after 10 seconds — check that the backend is running and the API key is valid.')
+      setRunsLoaded(true)
+    }, 10_000)
+
     Promise.allSettled([fetchAllRuns(), fetchGGUFModels()]).then(([runsResult, ggufResult]) => {
+      clearTimeout(timeoutId)
+      if (runsResult.status === 'rejected') {
+        setLoadError(String(runsResult.reason))
+      }
       const loadedRuns = runsResult.status === 'fulfilled' ? runsResult.value : []
       const loadedGguf = ggufResult.status === 'fulfilled' ? ggufResult.value : []
       setRuns(loadedRuns)
       setGgufModels(loadedGguf)
       setSelectedRun(loadedRuns[0]?.run_name ?? null)
+      setRunsLoaded(true)
     })
-  }, [])
+
+    return () => clearTimeout(timeoutId)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep selectedRunRef in sync with selectedRun
   useEffect(() => {
@@ -253,11 +267,31 @@ export function TrainingMonitor() {
 
   const bestCp = checkpoints.find(c => c.is_best) ?? checkpoints.find(c => c.is_last) ?? null
 
-  // Loading screen: no runs yet
-  if (runs.length === 0) {
+  // Loading / error / empty screen
+  if (!runsLoaded || runs.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-zinc-500 text-sm">Loading training runs…</div>
+        {!runsLoaded ? (
+          <div className="flex items-center gap-3 text-zinc-500 text-sm">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-400" />
+            Loading training runs…
+          </div>
+        ) : loadError ? (
+          <div className="text-center space-y-3 max-w-lg px-6">
+            <p className="text-red-400 text-sm font-medium">Failed to load training data</p>
+            <p className="text-zinc-500 text-xs font-mono break-all">{loadError}</p>
+            <p className="text-zinc-600 text-xs">
+              Check that the API key is valid and the backend is reachable.
+            </p>
+          </div>
+        ) : (
+          <div className="text-center space-y-2">
+            <p className="text-zinc-400 text-sm">No training runs found</p>
+            <p className="text-zinc-600 text-xs">
+              Run a training job first — LoRA checkpoints will appear here automatically.
+            </p>
+          </div>
+        )}
       </div>
     )
   }

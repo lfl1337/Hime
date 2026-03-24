@@ -430,8 +430,11 @@ def get_log_tail(run_name: str, n: int = 20) -> list[str]:
 
 def get_all_runs() -> list[RunInfo]:
     """Scan the LoRA base directory and return a RunInfo for each run that has a checkpoint/ folder."""
-    lora_base = _lora_base_dir()
-    if not lora_base.is_dir():
+    try:
+        lora_base = _lora_base_dir()
+        if not lora_base.is_dir():
+            return []
+    except Exception:
         return []
 
     results: list[RunInfo] = []
@@ -479,8 +482,11 @@ def get_all_runs() -> list[RunInfo]:
 
 def get_gguf_models() -> list[GGUFModelInfo]:
     """Scan the GGUF models directory and return info about each model folder."""
-    gguf_base = _gguf_base_dir()
-    if not gguf_base.is_dir():
+    try:
+        gguf_base = _gguf_base_dir()
+        if not gguf_base.is_dir():
+            return []
+    except Exception:
         return []
 
     results: list[GGUFModelInfo] = []

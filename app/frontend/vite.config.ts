@@ -20,11 +20,12 @@ function readBackendPort(): number {
     }
     console.error(`[vite] .runtime_port is not a number: "${content.trim()}"`)
   } catch {
-    // .runtime_port absent during production build — fallback is correct
+    console.warn(`[vite] .runtime_port not found at ${path.resolve(__dirname, '../backend/.runtime_port')} — defaulting to 8004`)
   }
   return 8004
 }
 
+// Keep BACKEND_PORT as the initial fallback only
 const BACKEND_PORT = readBackendPort()
 const BACKEND_ORIGIN = `http://127.0.0.1:${BACKEND_PORT}`
 
@@ -36,10 +37,24 @@ export default defineConfig({
     host: '127.0.0.1',
     strictPort: false,
     proxy: {
-      // Forwarded server-side — no CORS, no port discovery needed in the browser.
-      '/api':    { target: BACKEND_ORIGIN, changeOrigin: true },
-      '/health': { target: BACKEND_ORIGIN, changeOrigin: true },
-      '/ws':     { target: BACKEND_ORIGIN.replace('http', 'ws'), ws: true, changeOrigin: true },
+      // router() is called per-request — re-reads .runtime_port each time so
+      // the proxy stays correct even if the backend starts after Vite or restarts.
+      '/api': {
+        target: BACKEND_ORIGIN,
+        changeOrigin: true,
+        router: () => `http://127.0.0.1:${readBackendPort()}`,
+      },
+      '/health': {
+        target: BACKEND_ORIGIN,
+        changeOrigin: true,
+        router: () => `http://127.0.0.1:${readBackendPort()}`,
+      },
+      '/ws': {
+        target: BACKEND_ORIGIN.replace('http', 'ws'),
+        ws: true,
+        changeOrigin: true,
+        router: () => `ws://127.0.0.1:${readBackendPort()}`,
+      },
     },
   },
   resolve: {

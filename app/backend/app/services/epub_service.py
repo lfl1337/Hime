@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import warnings
@@ -14,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import Book, Chapter, Paragraph, Setting
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+
+_log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -204,8 +207,7 @@ def _parse_epub_sync(file_path: str) -> dict:
             if len(sub_chapters) > 1:
                 chapters.extend(sub_chapters)
                 continue
-            import logging
-            logging.warning(f"[epub] Spine item {item_filename} has {len(paragraphs)} paragraphs — consider re-splitting")
+            _log.warning("[epub] Spine item %s has %d paragraphs — consider re-splitting", item_filename, len(paragraphs))
 
         if paragraphs:
             chapters.append({
@@ -322,8 +324,7 @@ async def scan_watch_folder(folder_path: str, session: AsyncSession) -> list[str
             await import_epub(full_path, session)
             imported.append(full_path)
         except Exception as e:
-            import logging
-            logging.warning(f"[epub] Failed to auto-import {full_path}: {e}")
+            _log.warning("[epub] Failed to auto-import %s: %s", full_path, e)
     return imported
 
 

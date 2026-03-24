@@ -1,5 +1,6 @@
 """Start/stop LoRA training jobs from the app UI."""
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -11,6 +12,8 @@ import psutil
 from pydantic import BaseModel
 
 from ..config import settings
+
+_log = logging.getLogger(__name__)
 
 
 class TrainingProcess(BaseModel):
@@ -56,6 +59,7 @@ def start_training(
     epochs: int = 3,
     conda_env: str = "hime",
 ) -> TrainingProcess:
+    _log.info("Starting training for %s (epochs=%d)", model_name, epochs)
     _ensure_log_dir()
     pid_path = _pid_file(model_name)
     if pid_path.exists():
@@ -108,6 +112,7 @@ def stop_training(model_name: str) -> dict:
 
     data = json.loads(pid_path.read_text())
     pid = data["pid"]
+    _log.info("Stopping training for %s (pid=%d)", model_name, pid)
     graceful = False
 
     if _is_alive(pid):
@@ -130,6 +135,7 @@ def stop_training(model_name: str) -> dict:
 
 
 def get_running_processes() -> list[TrainingProcess]:
+    _log.debug("Scanning for running training processes")
     _ensure_log_dir()
     log_dir = Path(settings.training_log_path)
     processes = []

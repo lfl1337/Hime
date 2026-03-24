@@ -1,8 +1,11 @@
 """Training monitor endpoints."""
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..config import settings
 from ..services.training_monitor import (
     CheckpointInfo,
     GGUFModelInfo,
@@ -143,3 +146,16 @@ async def api_get_processes() -> list[TrainingProcess]:
 async def api_available_checkpoints(model_name: str) -> dict:
     """List available checkpoint names for a model (for the resume dropdown)."""
     return {"checkpoints": get_available_checkpoints(model_name)}
+
+
+@router.get("/backend-log")
+async def backend_log(
+    lines: int = Query(default=50, ge=1, le=500),
+) -> dict:
+    """Last N lines of the backend application log."""
+    log_path = Path(settings.backend_log_path)
+    if not log_path.exists():
+        return {"lines": []}
+    content = log_path.read_text(encoding="utf-8", errors="replace")
+    tail = content.splitlines()[-lines:]
+    return {"lines": tail}

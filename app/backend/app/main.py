@@ -1,9 +1,13 @@
 import asyncio
+import logging
+import time
 from contextlib import asynccontextmanager, suppress
 from collections.abc import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+
+_log = logging.getLogger(__name__)
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -29,6 +33,7 @@ async def _scan_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    _log.info("FastAPI lifespan startup: DB init + watch folder scan")
     await init_db()
     # Initial scan on startup
     async with AsyncSessionLocal() as session:
@@ -40,14 +45,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     task.cancel()
     with suppress(asyncio.CancelledError):
         await task
+    _log.info("FastAPI lifespan shutdown")
 
 
 app = FastAPI(
     title="Hime Translation API",
     description="Local-first Japanese-to-English light novel translation",
-    version="0.4.2",
+    version="0.5.0",
     lifespan=lifespan,
 )
+
+@app.middleware("http")
+async def _log_requests(request: Request, call_next):
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    ms = (time.perf_counter() - t0) * 1000
+    logging.getLogger("hime.requests").debug(
+        "%s %s → %d (%dms)",
+        request.method, request.url.path, response.status_code, round(ms),
+    )
+    return response
+
 
 # Rate limiting
 app.state.limiter = limiter
@@ -82,4 +100,4 @@ app.include_router(streaming.router)  # WebSocket — no /api/v1 prefix
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     """Liveness check — no auth required."""
-    return {"status": "ok", "app": "hime", "version": "0.4.2"}
+    return {"status": "ok", "app": "hime", "version": "0.5.0"}

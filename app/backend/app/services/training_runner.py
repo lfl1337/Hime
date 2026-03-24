@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import subprocess
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -154,6 +155,28 @@ def start_training(
     return TrainingProcess(model_name=model_name, **meta)  # type: ignore[arg-type]
 
 
+def _kill_survivors(all_pids: list[int], model_name: str) -> None:
+    """Post-stop check at +5s: kill any PIDs from the training tree that are still alive."""
+    import time
+    time.sleep(5)
+    survivors = [p for p in all_pids if psutil.pid_exists(p)]
+    if not survivors:
+        _log.info("Post-stop check OK — all %d PIDs dead for %s", len(all_pids), model_name)
+        return
+    _log.warning(
+        "Post-stop check: %d survivor(s) still alive for %s — PIDs %s — force-killing",
+        len(survivors), model_name, survivors,
+    )
+    for p in survivors:
+        try:
+            psutil.Process(p).kill()
+            _log.info("Post-stop killed PID %d", p)
+        except psutil.NoSuchProcess:
+            pass
+        except Exception as e:
+            _log.error("Post-stop kill failed for PID %d: %s", p, e)
+
+
 def stop_training(model_name: str) -> dict:
     _ensure_log_dir()
     pid_path = _pid_file(model_name)
@@ -165,44 +188,79 @@ def stop_training(model_name: str) -> dict:
     _log.info("Stopping training for %s (pid=%d)", model_name, pid)
     graceful = False
 
-    # Step 1: psutil tree kill (most reliable — kills CUDA workers too)
+    # Step 1: collect the full process tree before killing anything
+    # (once the parent dies its children may become orphans and disappear from the tree)
+    all_pids: list[int] = [pid]
+    procs_to_wait: list[psutil.Process] = []
     try:
         parent = psutil.Process(pid)
         children = parent.children(recursive=True)
+        all_pids.extend(c.pid for c in children)
+        _log.info(
+            "Process tree for %s: parent=%d, children=%s",
+            model_name, pid, [c.pid for c in children],
+        )
+        procs_to_wait = [parent] + children
+
+        # Step 2: kill children first, then kill parent explicitly
         for child in children:
             try:
-                _log.info("Killing child process %d (%s)", child.pid, child.name())
+                _log.info("Killing child PID %d (%s)", child.pid, child.name())
                 child.kill()
             except psutil.NoSuchProcess:
                 pass
-        parent.kill()
-        gone, alive = psutil.wait_procs([parent] + children, timeout=5)
+        try:
+            _log.info("Killing parent PID %d", pid)
+            parent.kill()
+        except psutil.NoSuchProcess:
+            pass
+
+        # Step 3: wait up to 5 s for the whole tree to die
+        gone, alive = psutil.wait_procs(procs_to_wait, timeout=5)
         if not alive:
             graceful = True
         else:
-            _log.warning("%d processes still alive after psutil kill", len(alive))
+            _log.warning(
+                "%d process(es) still alive after psutil kill: %s",
+                len(alive), [p.pid for p in alive],
+            )
+
     except psutil.NoSuchProcess:
         _log.info("Process %d already dead", pid)
         graceful = True
     except Exception as e:
         _log.error("psutil kill failed: %s — falling back to taskkill", e)
 
-    # Step 2: taskkill /F /T fallback (kills entire process tree on Windows)
-    if not graceful or _is_process_alive(pid):
-        try:
-            result = subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(pid)],
-                capture_output=True, text=True, timeout=10,
-            )
-            _log.info("taskkill: %s", result.stdout.strip() or result.stderr.strip())
-        except Exception as e:
-            _log.error("taskkill failed: %s", e)
+    # Step 4: taskkill /F /T for each PID that is still alive
+    # (targets every known PID individually so orphaned children are caught too)
+    still_alive = [p for p in all_pids if psutil.pid_exists(p)]
+    if still_alive:
+        for p in still_alive:
+            try:
+                result = subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(p)],
+                    capture_output=True, text=True, timeout=10,
+                )
+                _log.info("taskkill PID %d: %s", p, result.stdout.strip() or result.stderr.strip())
+            except Exception as e:
+                _log.error("taskkill failed for PID %d: %s", p, e)
 
-    # Step 3: Always clean up PID file
+    # Step 5: verify ALL known PIDs are gone
+    surviving = [p for p in all_pids if psutil.pid_exists(p)]
+    if surviving:
+        _log.warning("After stop: %d PID(s) still exist: %s", len(surviving), surviving)
+    else:
+        _log.info("Verified: all %d PID(s) dead for %s", len(all_pids), model_name)
+        graceful = True
+
+    # Step 6: schedule post-stop survivor check at +5 s
+    threading.Thread(target=_kill_survivors, args=(all_pids, model_name), daemon=True).start()
+
+    # Step 7: always clean up PID file
     pid_path.unlink(missing_ok=True)
     _log.info("Deleted PID file for %s", model_name)
 
-    # Step 4: Best-effort CUDA cache clear (non-blocking)
+    # Step 8: best-effort CUDA cache clear (non-blocking)
     try:
         subprocess.run(
             ["python", "-c", "import torch; torch.cuda.empty_cache()"],

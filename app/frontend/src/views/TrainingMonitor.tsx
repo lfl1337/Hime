@@ -9,13 +9,16 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts'
-import type { CheckpointInfo, GGUFModelInfo, LossPoint, RunInfo, TrainingProcess, TrainingStatus } from '../api/training'
+import type { CheckpointInfo, GGUFModelInfo, HardwareStats, LossPoint, RunInfo, TrainingProcess, TrainingStatus } from '../api/training'
 import {
+  createHardwareEventSource,
   createTrainingEventSource,
   fetchAllRuns,
   fetchGGUFModels,
   getBackendLog,
   getCheckpoints,
+  getHardwareHistory,
+  getHardwareStats,
   getLossHistory,
   getRunningProcesses,
   getTrainingLog,
@@ -96,6 +99,63 @@ function relativeTime(isoDate: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Log line type → CSS class
+// ---------------------------------------------------------------------------
+
+function logLineClass(type: string): string {
+  switch (type) {
+    case 'loss':       return 'text-violet-400'
+    case 'progress':   return 'text-cyan-400'
+    case 'hardware':   return 'text-orange-400'
+    case 'checkpoint': return 'text-green-400 font-semibold'
+    case 'error':      return 'text-red-400'
+    case 'info':       return 'text-zinc-300'
+    default:           return 'text-zinc-500'
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hardware monitor card
+// ---------------------------------------------------------------------------
+
+interface HwCardProps {
+  label: string
+  value: string
+  sub?: string
+  pct: number
+  barColor: string
+}
+
+function HwCard({ label, value, sub, pct, barColor }: HwCardProps) {
+  const clamped = Math.min(Math.max(pct, 0), 100)
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 flex flex-col gap-1.5">
+      <div className="text-xs text-zinc-500 font-medium uppercase tracking-wide">{label}</div>
+      <div className="text-lg font-semibold text-zinc-100 leading-tight">{value}</div>
+      {sub && <div className="text-xs text-zinc-500">{sub}</div>}
+      <div className="w-full bg-zinc-800 rounded-full h-1.5 mt-auto">
+        <div
+          className={`h-1.5 rounded-full transition-all ${barColor}`}
+          style={{ width: `${clamped}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function gpuUtilColor(pct: number): string {
+  if (pct >= 71) return 'bg-green-500'
+  if (pct >= 31) return 'bg-yellow-500'
+  return 'bg-zinc-500'
+}
+
+function tempColor(celsius: number): string {
+  if (celsius > 80) return 'text-red-400'
+  if (celsius >= 60) return 'text-yellow-400'
+  return 'text-green-400'
+}
+
+// ---------------------------------------------------------------------------
 // TrainingMonitor
 // ---------------------------------------------------------------------------
 
@@ -109,7 +169,7 @@ export function TrainingMonitor() {
   const [status, setStatus] = useState<TrainingStatus | null>(null)
   const [checkpoints, setCheckpoints] = useState<CheckpointInfo[]>([])
   const [lossHistory, setLossHistory] = useState<LossPoint[]>([])
-  const [logLines, setLogLines] = useState<string[]>([])
+  const [logLines, setLogLines] = useState<Array<{ line: string; type: string }>>([])
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now())
   const [sseConnected, setSseConnected] = useState(false)
   const [secondsAgo, setSecondsAgo] = useState(0)
@@ -117,6 +177,14 @@ export function TrainingMonitor() {
   // Log tab state
   const [logTab, setLogTab] = useState<'training' | 'backend'>('training')
   const [backendLogLines, setBackendLogLines] = useState<string[]>([])
+
+  // Hardware monitor state
+  const [hwStats, setHwStats] = useState<HardwareStats | null>(null)
+  const [hwHistory, setHwHistory] = useState<HardwareStats[]>([])
+  const hwEsRef = useRef<EventSource | null>(null)
+
+  // Log filter state
+  const [logFilter, setLogFilter] = useState<'all' | 'loss' | 'progress' | 'hardware' | 'checkpoint' | 'error'>('all')
 
   // Training controls state
   const [trainingEpochs, setTrainingEpochs] = useState(3)
@@ -159,6 +227,32 @@ export function TrainingMonitor() {
     })
 
     return () => clearTimeout(timeoutId)
+  }, [])
+
+  // Hardware SSE — mount once, independent of selected run
+  useEffect(() => {
+    // Load initial history
+    getHardwareStats().then(s => setHwStats(s)).catch(() => {})
+    getHardwareHistory(10).then(h => setHwHistory(h)).catch(() => {})
+
+    createHardwareEventSource().then(es => {
+      hwEsRef.current = es
+      es.addEventListener('hardware_stats', (e: MessageEvent<string>) => {
+        try {
+          const stats = JSON.parse(e.data) as HardwareStats
+          setHwStats(stats)
+          setHwHistory(prev => {
+            const next = [...prev, stats]
+            return next.length > 120 ? next.slice(-120) : next
+          })
+        } catch { /* ignore */ }
+      })
+    }).catch(() => {})
+
+    return () => {
+      hwEsRef.current?.close()
+      hwEsRef.current = null
+    }
   }, [])
 
   // Keep selectedRunRef in sync with selectedRun
@@ -211,7 +305,7 @@ export function TrainingMonitor() {
       if (s.status === 'fulfilled') { setStatus(s.value); setLastUpdated(Date.now()) }
       if (cp.status === 'fulfilled') setCheckpoints(cp.value)
       if (lh.status === 'fulfilled') setLossHistory(lh.value.slice(-1000))
-      if (ll.status === 'fulfilled') setLogLines(ll.value)
+      if (ll.status === 'fulfilled') setLogLines(ll.value.map(line => ({ line, type: 'info' })))
       setRunLoading(false)
     })
 
@@ -235,9 +329,10 @@ export function TrainingMonitor() {
       es.addEventListener('log_line', (e: MessageEvent<string>) => {
         if (aborted) return
         try {
-          const { line } = JSON.parse(e.data) as { line: string }
+          const parsed = JSON.parse(e.data) as { line: string; type?: string }
+          const entry = { line: parsed.line, type: parsed.type ?? 'info' }
           setLogLines(prev => {
-            const next = [...prev, line]
+            const next = [...prev, entry]
             return next.length > 100 ? next.slice(-100) : next
           })
         } catch { /* ignore */ }
@@ -274,7 +369,7 @@ export function TrainingMonitor() {
             ]).then(([s, ll]) => {
               if (aborted) return
               if (s.status === 'fulfilled') { setStatus(s.value); setLastUpdated(Date.now()) }
-              if (ll.status === 'fulfilled') setLogLines(ll.value)
+              if (ll.status === 'fulfilled') setLogLines(ll.value.map(line => ({ line, type: 'info' })))
             })
           }, 5000)
         }
@@ -333,13 +428,6 @@ export function TrainingMonitor() {
         eval_loss: p.eval_loss,
       }))
   }, [lossHistory])
-
-  function logLineClass(line: string): string {
-    if (/\] ERROR\s/.test(line) || /\] CRITICAL\s/.test(line)) return 'text-red-400'
-    if (/\] WARNING\s/.test(line)) return 'text-yellow-400'
-    if (/\] DEBUG\s/.test(line)) return 'text-zinc-600'
-    return 'text-zinc-400'
-  }
 
   const { copied, copy } = useCopyToClipboard()
 
@@ -503,6 +591,87 @@ export function TrainingMonitor() {
             {run.display_name}
           </button>
         ))}
+      </div>
+
+      {/* Hardware Monitor */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+        <h3 className="text-sm font-medium text-zinc-400 mb-3">Hardware</h3>
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+          <HwCard
+            label="VRAM"
+            value={hwStats
+              ? `${(hwStats.gpu_vram_used_mb / 1024).toFixed(1)} / ${(hwStats.gpu_vram_total_mb / 1024).toFixed(1)} GB`
+              : '— / — GB'}
+            pct={hwStats?.gpu_vram_pct ?? 0}
+            barColor="bg-violet-500"
+          />
+          <HwCard
+            label="GPU"
+            value={hwStats ? `${hwStats.gpu_utilization_pct}%` : '—'}
+            pct={hwStats?.gpu_utilization_pct ?? 0}
+            barColor={gpuUtilColor(hwStats?.gpu_utilization_pct ?? 0)}
+          />
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 flex flex-col gap-1.5">
+            <div className="text-xs text-zinc-500 font-medium uppercase tracking-wide">Temp</div>
+            <div className={`text-lg font-semibold leading-tight ${tempColor(hwStats?.gpu_temp_celsius ?? 0)}`}>
+              {hwStats ? `${hwStats.gpu_temp_celsius}°C` : '—'}
+            </div>
+            <div className="text-xs text-zinc-600">Limit: 90°C</div>
+            <div className="w-full bg-zinc-800 rounded-full h-1.5 mt-auto">
+              <div
+                className={`h-1.5 rounded-full transition-all ${hwStats && hwStats.gpu_temp_celsius > 80 ? 'bg-red-500' : hwStats && hwStats.gpu_temp_celsius >= 60 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                style={{ width: `${Math.min((hwStats?.gpu_temp_celsius ?? 0) / 90 * 100, 100)}%` }}
+              />
+            </div>
+          </div>
+          <HwCard
+            label="Power"
+            value={hwStats ? `${hwStats.gpu_power_draw_w.toFixed(0)}W` : '—'}
+            sub={hwStats?.gpu_power_limit_w ? `/ ${hwStats.gpu_power_limit_w.toFixed(0)}W limit` : undefined}
+            pct={hwStats && hwStats.gpu_power_limit_w > 0 ? hwStats.gpu_power_draw_w / hwStats.gpu_power_limit_w * 100 : 0}
+            barColor="bg-violet-400"
+          />
+          <HwCard
+            label="RAM"
+            value={hwStats
+              ? `${hwStats.ram_used_gb.toFixed(1)} / ${hwStats.ram_total_gb.toFixed(1)} GB`
+              : '— / — GB'}
+            pct={hwStats?.ram_pct ?? 0}
+            barColor="bg-blue-500"
+          />
+          <HwCard
+            label="CPU"
+            value={hwStats ? `${hwStats.cpu_utilization_pct.toFixed(0)}%` : '—'}
+            pct={hwStats?.cpu_utilization_pct ?? 0}
+            barColor="bg-zinc-400"
+          />
+        </div>
+
+        {/* Sparkline chart: VRAM%, GPU%, Temp% over last 10 minutes */}
+        {hwHistory.length > 1 && (
+          <div className="mt-4">
+            <ResponsiveContainer width="100%" height={80}>
+              <ComposedChart
+                data={hwHistory.map(h => ({
+                  t: h.timestamp,
+                  vram: h.gpu_vram_pct,
+                  gpu: h.gpu_utilization_pct,
+                  temp: Math.min(h.gpu_temp_celsius / 90 * 100, 100),
+                }))}
+                margin={{ top: 2, right: 4, bottom: 2, left: 4 }}
+              >
+                <Line type="monotone" dataKey="vram" name="VRAM%" stroke="#8b5cf6" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+                <Line type="monotone" dataKey="gpu" name="GPU%" stroke="#22c55e" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+                <Line type="monotone" dataKey="temp" name="Temp%" stroke="#f97316" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+            <div className="flex gap-4 mt-1 text-xs text-zinc-600">
+              <span><span className="text-violet-500">■</span> VRAM%</span>
+              <span><span className="text-green-500">■</span> GPU%</span>
+              <span><span className="text-orange-500">■</span> Temp%</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Content: fades when switching runs */}
@@ -804,7 +973,7 @@ export function TrainingMonitor() {
 
         {/* 5. Log Feed */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
             {(['training', 'backend'] as const).map(t => (
               <button key={t}
                 onClick={() => setLogTab(t)}
@@ -813,6 +982,19 @@ export function TrainingMonitor() {
                 {t === 'training' ? 'Training Log' : 'Backend Log'}
               </button>
             ))}
+            {logTab === 'training' && (
+              <div className="flex items-center gap-1 ml-2 flex-wrap">
+                {(['all', 'loss', 'progress', 'hardware', 'checkpoint', 'error'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setLogFilter(f)}
+                    className={`text-xs px-1.5 py-0.5 rounded transition-colors ${logFilter === f ? 'bg-zinc-600 text-zinc-100' : 'text-zinc-600 hover:text-zinc-400'}`}
+                  >
+                    {f === 'all' ? 'All' : f === 'checkpoint' ? 'Checkpoints' : f.charAt(0).toUpperCase() + f.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div
             className="h-48 overflow-y-auto rounded-lg p-3 font-mono text-xs leading-relaxed"
@@ -824,11 +1006,13 @@ export function TrainingMonitor() {
                   No log file yet. Use Training Controls above to start a training job.
                 </div>
               ) : (
-                logLines.map((line, i) => (
-                  <div key={i} className="text-zinc-400 whitespace-pre-wrap break-all">
-                    {line}
-                  </div>
-                ))
+                logLines
+                  .filter(entry => logFilter === 'all' || entry.type === logFilter)
+                  .map((entry, i) => (
+                    <div key={i} className={`whitespace-pre-wrap break-all ${logLineClass(entry.type)}`}>
+                      {entry.line}
+                    </div>
+                  ))
               )
             ) : (
               backendLogLines.length === 0 ? (
@@ -836,11 +1020,14 @@ export function TrainingMonitor() {
                   No backend log yet. Start the backend to generate log output.
                 </div>
               ) : (
-                backendLogLines.map((line, i) => (
-                  <div key={i} className={`whitespace-pre-wrap break-all ${logLineClass(line)}`}>
-                    {line}
-                  </div>
-                ))
+                backendLogLines.map((line, i) => {
+                  const t = /\] ERROR\b|\] CRITICAL\b/.test(line) ? 'error' : 'info'
+                  return (
+                    <div key={i} className={`whitespace-pre-wrap break-all ${logLineClass(t)}`}>
+                      {line}
+                    </div>
+                  )
+                })
               )
             )}
             <div ref={logEndRef} />

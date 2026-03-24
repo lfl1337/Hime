@@ -572,20 +572,87 @@ def get_gguf_models() -> list[GGUFModelInfo]:
     return results
 
 
+# ---------------------------------------------------------------------------
+# Log line classification
+# ---------------------------------------------------------------------------
+
+def _classify_log_line(line: str) -> str:
+    """Return a type tag for a training log line."""
+    if "[CHECKPOINT]" in line:
+        return "checkpoint"
+    if "[HW]" in line:
+        return "hardware"
+    if any(tag in line for tag in ("[INFO]", "[FERTIG]", "[UNTERBROCHEN]", "[OK]", "[i]", "[..]")):
+        return "info"
+    if re.search(r"'loss'\s*:", line):
+        return "loss"
+    if re.search(r"\d+%\|", line):
+        return "progress"
+    if re.search(r"\b(ERROR|CRITICAL)\b", line):
+        return "error"
+    return "info"
+
+
+# ---------------------------------------------------------------------------
+# Hardware log helper
+# ---------------------------------------------------------------------------
+
+def _write_hw_snapshot_to_log(run_name: str) -> None:
+    """Append a [HW] hardware snapshot line to the training log file."""
+    log_file = _find_log_for_run(run_name)
+    if log_file is None:
+        return
+    try:
+        from .hardware_monitor import get_hardware_stats
+        stats = get_hardware_stats()
+        ts = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+        vram_used = stats.gpu_vram_used_mb / 1024
+        vram_total = stats.gpu_vram_total_mb / 1024
+        line1 = (
+            f"{ts} [HW] GPU: {vram_used:.1f}/{vram_total:.1f} GB VRAM"
+            f" | {stats.gpu_utilization_pct}% util"
+            f" | {stats.gpu_temp_celsius}°C"
+            f" | {stats.gpu_power_draw_w:.0f}W\n"
+        )
+        line2 = (
+            f"{ts} [HW] RAM: {stats.ram_used_gb:.1f}/{stats.ram_total_gb:.1f} GB"
+            f" | CPU: {stats.cpu_utilization_pct:.0f}%\n"
+        )
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(line1)
+            f.write(line2)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# SSE stream
+# ---------------------------------------------------------------------------
+
 async def stream_events(run_name: str):
     """Async generator yielding SSE-compatible dicts every 3 seconds."""
     last_line_count = 0
     last_loss_step = -1
+    last_hw_log: float = 0.0
+
     while True:
         try:
             status = get_training_status(run_name)
             yield {"event": "status", "data": status.model_dump_json()}
 
+            # Write hardware snapshot to log every 60s during active training
+            if status.status == "training":
+                now = time.time()
+                if now - last_hw_log >= 60:
+                    await asyncio.to_thread(_write_hw_snapshot_to_log, run_name)
+                    last_hw_log = now
+
             lines = get_log_tail(run_name, 100)
             if len(lines) < last_line_count:  # log rotation
                 last_line_count = 0
             for line in lines[last_line_count:]:
-                yield {"event": "log_line", "data": json.dumps({"line": line})}
+                line_type = _classify_log_line(line)
+                yield {"event": "log_line", "data": json.dumps({"line": line, "type": line_type})}
             last_line_count = len(lines)
 
             # Emit new loss points since last tick

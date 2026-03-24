@@ -141,12 +141,18 @@ def load_model(model_name: str, max_seq_len: int):
     print(f"\n[INFO] Loading model: {model_name}")
     print(f"     Max Seq Len: {max_seq_len}")
     _load_start = _time.time()
+    # Free memory before loading to minimise peak pagefile pressure (OS Error 1455)
+    gc.collect()
+    torch.cuda.empty_cache()
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=model_name,
         max_seq_length=max_seq_len,
         dtype=None,
         load_in_4bit=True,
         trust_remote_code=True,
+        device_map="cuda:0",              # Load shards directly to GPU, skip CPU staging
+        low_cpu_mem_usage=True,           # Load one shard at a time — avoids mapping all to RAM
+        max_memory={0: "30GB", "cpu": "20GB"},  # Cap CPU RAM to prevent pagefile exhaustion
     )
     print(f"[INFO] Model loaded ({_time.time() - _load_start:.1f}s)")
     return model, tokenizer
@@ -346,7 +352,7 @@ def main():
     data_file = Path(args.data_file) if args.data_file else TRAINING_DIR / "hime_training_all.jsonl"
 
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:512")
 
     print("=" * 60)
     print(f"  Hime - Generic Training Script")

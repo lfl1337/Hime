@@ -237,31 +237,41 @@ export function TrainingMonitor() {
     return () => clearTimeout(timeoutId)
   }, [])
 
-  // Hardware SSE — mount once, independent of selected run
+  // Hardware SSE — pauses when window is hidden, resumes on restore
   useEffect(() => {
-    // Load initial history
-    getHardwareStats().then(s => setHwStats(s)).catch(() => {})
-    getHardwareHistory(10).then(h => setHwHistory(h)).catch(() => {})
+    if (!isWindowVisible) return
+
+    let cancelled = false
+
+    getHardwareStats().then(s => { if (!cancelled) setHwStats(s) }).catch(() => {})
+    getHardwareHistory(10).then(h => { if (!cancelled) setHwHistory(h) }).catch(() => {})
+
+    const hwHandler = (e: MessageEvent<string>) => {
+      try {
+        const stats = JSON.parse(e.data) as HardwareStats
+        setHwStats(stats)
+        setHwHistory(prev => {
+          const next = [...prev, stats]
+          return next.length > 120 ? next.slice(-120) : next
+        })
+      } catch { /* ignore */ }
+    }
 
     createHardwareEventSource().then(es => {
+      if (cancelled) { es.close(); return }
       hwEsRef.current = es
-      es.addEventListener('hardware_stats', (e: MessageEvent<string>) => {
-        try {
-          const stats = JSON.parse(e.data) as HardwareStats
-          setHwStats(stats)
-          setHwHistory(prev => {
-            const next = [...prev, stats]
-            return next.length > 120 ? next.slice(-120) : next
-          })
-        } catch { /* ignore */ }
-      })
+      es.addEventListener('hardware_stats', hwHandler)
     }).catch(() => {})
 
     return () => {
-      hwEsRef.current?.close()
-      hwEsRef.current = null
+      cancelled = true
+      if (hwEsRef.current) {
+        hwEsRef.current.removeEventListener('hardware_stats', hwHandler)
+        hwEsRef.current.close()
+        hwEsRef.current = null
+      }
     }
-  }, [])
+  }, [isWindowVisible])
 
   // Keep selectedRunRef in sync with selectedRun
   useEffect(() => {

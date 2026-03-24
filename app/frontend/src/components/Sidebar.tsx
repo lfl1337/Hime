@@ -29,9 +29,11 @@ function GearIcon() {
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const backendOnline = useStore((s) => s.backendOnline)
+  const isWindowVisible = useStore((s) => s.isWindowVisible)
   const [trainingRun, setTrainingRun] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!isWindowVisible) return
     const check = () =>
       getRunningProcesses()
         .then(procs => setTrainingRun(procs[0]?.model_name ?? null))
@@ -39,7 +41,7 @@ export function Sidebar() {
     void check()
     const id = setInterval(check, 10_000)
     return () => clearInterval(id)
-  }, [])
+  }, [isWindowVisible])
 
   return (
     <aside
@@ -128,7 +130,7 @@ export function Sidebar() {
           <div className="flex flex-col gap-1">
             <span className="text-xs text-zinc-600">Backend</span>
             <StatusBadge online={backendOnline} />
-            <p className="mt-1 text-xs text-zinc-600">Hime v0.7.6</p>
+            <p className="mt-1 text-xs text-zinc-600">Hime v0.7.7</p>
           </div>
         )}
       </div>

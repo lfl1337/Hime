@@ -245,6 +245,21 @@ def save_hardware_stats(stats: HardwareStats) -> None:
         pass
 
 
+def cleanup_old_hardware_stats(hours: int = 2) -> None:
+    """Delete hardware_stats rows older than N hours (sync, thread-safe)."""
+    db = _db_path()
+    try:
+        con = sqlite3.connect(db, timeout=5)
+        con.execute(
+            "DELETE FROM hardware_stats WHERE timestamp < datetime('now', ? || ' hours')",
+            (f"-{hours}",),
+        )
+        con.commit()
+        con.close()
+    except Exception:
+        pass
+
+
 def get_hardware_history(minutes: int = 10) -> list[HardwareStats]:
     """Return the last N minutes of hardware stats from SQLite."""
     db = _db_path()

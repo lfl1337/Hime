@@ -17,6 +17,7 @@
     },
     "shell:allow-execute",
     "shell:allow-spawn",
+    "shell:allow-open",
     "dialog:allow-open"
   ]
 }

@@ -4,12 +4,16 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import warnings
 from datetime import UTC, datetime
 
+from bs4 import XMLParsedAsHTMLWarning
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Book, Chapter, Paragraph, Setting
+
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 
 # ---------------------------------------------------------------------------
@@ -30,13 +34,48 @@ def _split_sentences(text: str, max_len: int = 400) -> list[str]:
     return parts or [text]
 
 
+def _extract_toc_titles(book) -> dict[str, str]:
+    """Return {filename_base: title} from EPUB ToC (NCX or nav)."""
+    result: dict[str, str] = {}
+
+    def _recurse(items) -> None:
+        for item in items:
+            if isinstance(item, tuple):
+                link, children = item
+                if hasattr(link, 'href') and hasattr(link, 'title') and link.title:
+                    base = link.href.split('#')[0].split('/')[-1]
+                    result[base] = link.title.strip()
+                _recurse(children)
+            elif hasattr(item, 'href') and hasattr(item, 'title') and item.title:
+                base = item.href.split('#')[0].split('/')[-1]
+                result[base] = item.title.strip()
+
+    _recurse(book.toc)
+    return result
+
+
+_ONLY_NUM_PUNCT = re.compile(r'^[\d\s\u3000\-_:.,;!?。、「」『』【】\[\]()（）]+$')
+
+
+def _is_valid_title(title: str, book_title: str) -> bool:
+    """Return False if title is empty, too short, only numbers/punct, or equals book title."""
+    t = title.strip().replace('\u3000', ' ')
+    if len(t) < 2:
+        return False
+    if _ONLY_NUM_PUNCT.match(t):
+        return False
+    if t == book_title.strip():
+        return False
+    return True
+
+
 def _parse_epub_sync(file_path: str) -> dict:
     """Synchronous EPUB parsing — run inside asyncio.to_thread."""
     import ebooklib
     from ebooklib import epub
     from bs4 import BeautifulSoup
 
-    book = epub.read_epub(file_path, options={"ignore_ncx": True})
+    book = epub.read_epub(file_path)
 
     # Metadata
     title_meta = book.get_metadata("DC", "title")
@@ -57,6 +96,9 @@ def _parse_epub_sync(file_path: str) -> dict:
                 cover_blob = item.get_content()
                 break
 
+    # Build ToC title map once
+    toc_titles = _extract_toc_titles(book)
+
     # Chapters — spine order
     chapters: list[dict] = []
     spine_ids = [item_id for item_id, _ in book.spine]
@@ -66,11 +108,34 @@ def _parse_epub_sync(file_path: str) -> dict:
             continue
 
         html = item.get_content().decode("utf-8", errors="replace")
-        soup = BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(html, "lxml-xml")
 
-        # Chapter title: first heading or filename
-        heading = soup.find(re.compile(r"^h[1-6]$"))
-        chapter_title = heading.get_text(strip=True) if heading else f"Chapter {idx + 1}"
+        # Chapter title priority:
+        # 1. ToC (pre-built mapping)
+        item_filename = item.get_name().split('/')[-1]
+        chapter_title = toc_titles.get(item_filename)
+
+        # 2. HTML <title> tag
+        if not chapter_title or not _is_valid_title(chapter_title, title):
+            title_tag = soup.find('title')
+            if title_tag:
+                candidate = title_tag.get_text(strip=True).replace('\u3000', ' ')
+                if _is_valid_title(candidate, title):
+                    chapter_title = candidate
+
+        # 3. First heading tag (h1 > h2 > h3)
+        if not chapter_title or not _is_valid_title(chapter_title, title):
+            for tag in ['h1', 'h2', 'h3']:
+                heading = soup.find(tag)
+                if heading:
+                    candidate = heading.get_text(strip=True).replace('\u3000', ' ')
+                    if _is_valid_title(candidate, title):
+                        chapter_title = candidate
+                        break
+
+        # 4. Fallback
+        if not chapter_title or not _is_valid_title(chapter_title, title):
+            chapter_title = f"Chapter {idx + 1}"
 
         # Paragraphs: collect per <p> tag, then filter/chunk
         raw_paragraphs: list[str] = []
@@ -96,6 +161,7 @@ def _parse_epub_sync(file_path: str) -> dict:
             chapters.append({
                 "title": chapter_title,
                 "paragraphs": paragraphs,
+                "is_front_matter": len(paragraphs) < 3,
             })
 
     return {
@@ -137,6 +203,7 @@ async def import_epub(file_path: str, session: AsyncSession) -> dict:
             chapter_index=ch_idx,
             title=ch_data["title"],
             total_paragraphs=len(ch_data["paragraphs"]),
+            is_front_matter=ch_data["is_front_matter"],
         )
         session.add(chapter)
         await session.flush()  # get chapter.id
@@ -278,6 +345,7 @@ def _chapter_to_dict(chapter: Chapter) -> dict:
         "total_paragraphs": chapter.total_paragraphs,
         "translated_paragraphs": chapter.translated_paragraphs,
         "status": chapter.status,
+        "is_front_matter": chapter.is_front_matter,
     }
 
 

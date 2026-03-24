@@ -2,23 +2,21 @@
 WebSocket endpoints for live token streaming.
 
 Legacy single-model endpoint (backward compat):
-    ws://127.0.0.1:8000/ws/translate?api_key=<your-key>
+    ws://127.0.0.1:8000/ws/translate
 
 New multi-stage pipeline endpoint:
-    ws://127.0.0.1:8000/ws/translate/{job_id}?api_key=<your-key>
+    ws://127.0.0.1:8000/ws/translate/{job_id}
 
 Close codes:
-    4001 — Unauthorized (bad or missing API key)
     4004 — Job not found
 """
 import asyncio
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from ..config import settings
 from ..database import AsyncSessionLocal
 from ..inference import translate_stream
 from ..models import Translation
@@ -32,15 +30,10 @@ _active_pipelines: dict[int, asyncio.Task] = {}
 
 
 @router.websocket("/ws/translate")
-async def ws_translate(
-    websocket: WebSocket,
-    api_key: str = Query(..., description="Local API key"),
-) -> None:
-    if api_key != settings.api_key:
-        await websocket.close(code=4001, reason="Unauthorized")
-        return
-
+async def ws_translate(websocket: WebSocket) -> None:
     await websocket.accept()
+
+    from ..config import settings
 
     try:
         while True:
@@ -90,7 +83,6 @@ async def ws_translate(
 async def ws_translate_pipeline(
     websocket: WebSocket,
     job_id: int,
-    api_key: str = Query(..., description="Local API key"),
 ) -> None:
     """
     Pipeline WebSocket for a specific translation job.
@@ -99,10 +91,6 @@ async def ws_translate_pipeline(
     - If the pipeline is already running (reconnect), attach to the queue.
     - If the job is already complete, emit pipeline_complete and close.
     """
-    if api_key != settings.api_key:
-        await websocket.close(code=4001, reason="Unauthorized")
-        return
-
     # Load job row
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -160,7 +148,6 @@ async def ws_translate_pipeline(
         _active_pipelines[job_id] = task
     else:
         # Pipeline already running — reconnect path.
-        # Send current stage status; poll DB until complete, then replay final result.
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(Translation).where(Translation.id == job_id)

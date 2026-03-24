@@ -1,4 +1,13 @@
-import { apiFetch, getApiKey, getBaseUrl } from './client'
+import { apiFetch, getBaseUrl } from './client'
+
+export interface EtaInfo {
+  pct: number
+  current_step: number
+  total_steps: number
+  elapsed: string
+  eta: string
+  sec_per_it: number
+}
 
 export interface TrainingStatus {
   run_name: string
@@ -15,6 +24,7 @@ export interface TrainingStatus {
   has_log_file: boolean
   log_file_path: string | null
   scripts_path: string
+  eta_info: EtaInfo | null
 }
 
 export interface CheckpointInfo {
@@ -56,6 +66,22 @@ export interface GGUFModelInfo {
   file_count: number
   is_pipeline_model: boolean
   pipeline_role: string | null
+}
+
+export interface TrainingProcess {
+  model_name: string
+  pid: number
+  started_at: string
+  checkpoint: string | null
+  log_file: string
+  epochs: number
+}
+
+export interface StartTrainingParams {
+  model_name: string
+  resume_checkpoint: string | null
+  epochs: number
+  conda_env: string
 }
 
 function runQuery(run?: string): string {
@@ -102,7 +128,44 @@ export async function fetchGGUFModels(): Promise<GGUFModelInfo[]> {
 }
 
 export async function createTrainingEventSource(run?: string): Promise<EventSource> {
-  const [baseUrl, apiKey] = await Promise.all([getBaseUrl(), getApiKey()])
-  const url = `${baseUrl}/api/v1/training/stream?api_key=${encodeURIComponent(apiKey)}${run ? `&run=${encodeURIComponent(run)}` : ''}`
+  const baseUrl = await getBaseUrl()
+  const url = `${baseUrl}/api/v1/training/stream${run ? `?run=${encodeURIComponent(run)}` : ''}`
   return new EventSource(url)
+}
+
+export async function startTraining(params: StartTrainingParams): Promise<TrainingProcess> {
+  const res = await apiFetch('/api/v1/training/start', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText })) as { detail: string }
+    throw new Error(err.detail || res.statusText)
+  }
+  return res.json() as Promise<TrainingProcess>
+}
+
+export async function stopTraining(modelName: string): Promise<{ stopped: boolean; graceful: boolean }> {
+  const res = await apiFetch('/api/v1/training/stop', {
+    method: 'POST',
+    body: JSON.stringify({ model_name: modelName }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText })) as { detail: string }
+    throw new Error(err.detail || res.statusText)
+  }
+  return res.json() as Promise<{ stopped: boolean; graceful: boolean }>
+}
+
+export async function getRunningProcesses(): Promise<TrainingProcess[]> {
+  const res = await apiFetch('/api/v1/training/processes')
+  if (!res.ok) throw new Error(`training/processes failed: ${res.statusText}`)
+  return res.json() as Promise<TrainingProcess[]>
+}
+
+export async function getAvailableCheckpoints(modelName: string): Promise<string[]> {
+  const res = await apiFetch(`/api/v1/training/available-checkpoints/${encodeURIComponent(modelName)}`)
+  if (!res.ok) throw new Error(`training/available-checkpoints failed: ${res.statusText}`)
+  const data = await res.json() as { checkpoints: string[] }
+  return data.checkpoints
 }

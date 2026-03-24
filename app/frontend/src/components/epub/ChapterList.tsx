@@ -68,7 +68,12 @@ export function ChapterList({ book, onChapterSelected }: Props) {
             >
               <div className="flex items-center gap-2 mb-1">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[ch.status]}`} />
-                <span className="text-sm text-zinc-200 line-clamp-1">{ch.title}</span>
+                <span className={`text-sm line-clamp-1 ${ch.is_front_matter ? 'opacity-50' : 'text-zinc-200'}`}>
+                  {ch.title}
+                  {ch.is_front_matter && (
+                    <span className="ml-1 text-xs text-zinc-600">(front matter)</span>
+                  )}
+                </span>
               </div>
               <div className="ml-4">
                 <div className="w-full bg-zinc-700 rounded-full h-1 mb-1">

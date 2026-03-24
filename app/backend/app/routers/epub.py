@@ -3,7 +3,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import require_api_key
 from ..database import get_session
 from ..services.epub_service import (
     export_chapter,
@@ -36,7 +35,6 @@ class SettingRequest(BaseModel):
 async def api_import_epub(
     body: ImportRequest,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> dict:
     try:
         return await import_epub(body.file_path, session)
@@ -47,7 +45,6 @@ async def api_import_epub(
 @router.get("/books")
 async def api_get_library(
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> list[dict]:
     return await get_library(session)
 
@@ -56,7 +53,6 @@ async def api_get_library(
 async def api_get_chapters(
     book_id: int,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> list[dict]:
     return await get_chapters(book_id, session)
 
@@ -65,7 +61,6 @@ async def api_get_chapters(
 async def api_get_paragraphs(
     chapter_id: int,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> list[dict]:
     return await get_paragraphs(chapter_id, session)
 
@@ -75,7 +70,6 @@ async def api_save_translation(
     paragraph_id: int,
     body: TranslationRequest,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> None:
     await save_translation(paragraph_id, body.text, session)
 
@@ -85,7 +79,6 @@ async def api_export_chapter(
     chapter_id: int,
     format: str = Query(default="txt"),  # noqa: A002
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> dict:
     text = await export_chapter(chapter_id, format, session)
     return {"content": text}
@@ -94,7 +87,6 @@ async def api_export_chapter(
 @router.get("/settings")
 async def api_get_settings(
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> dict:
     folder = await get_setting("epub_watch_folder", session)
     interval = await get_setting("auto_scan_interval", session)
@@ -108,6 +100,5 @@ async def api_get_settings(
 async def api_update_setting(
     body: SettingRequest,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> None:
     await set_setting(body.key, body.value, session)

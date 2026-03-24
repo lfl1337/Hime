@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import require_api_key
 from ..database import get_session
 from ..middleware.rate_limit import limiter
 from ..models import SourceText
@@ -18,7 +17,6 @@ async def create_text(
     request: Request,
     body: SourceTextCreate,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> SourceText:
     body.title = sanitize_text(body.title, "title")
     body.content = sanitize_text(body.content, "content")
@@ -35,7 +33,6 @@ async def list_texts(
     skip: int = 0,
     limit: int = 50,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> list[SourceText]:
     result = await session.execute(
         select(SourceText)
@@ -50,7 +47,6 @@ async def list_texts(
 async def get_text(
     text_id: int,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> SourceText:
     text = await session.get(SourceText, text_id)
     if not text:
@@ -62,7 +58,6 @@ async def get_text(
 async def delete_text(
     text_id: int,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_api_key),
 ) -> None:
     text = await session.get(SourceText, text_id)
     if not text:

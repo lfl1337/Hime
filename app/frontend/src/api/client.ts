@@ -1,18 +1,14 @@
-// Port and API key discovery for local-first backend
+// Port discovery for local-first backend
 //
 // DEV mode  (npm run vite  OR  tauri dev):
 //   getBaseUrl() returns window.location.origin so requests go to the
 //   Vite dev server, which proxies /api, /health, /ws to the backend.
-//   The backend port is resolved once at Vite startup by reading
-//   .runtime_port in Node.js — no CORS, no Tauri fs plugin needed.
 //
 // PROD mode (packaged Tauri app):
 //   getPort() reads .runtime_port from %APPDATA%\dev.hime.app\ via
 //   appDataDir() + readTextFile(), matching where run.py writes it.
-//   getApiKey() reads .env from the same directory.
 
 let cachedPort: number | null = null
-let cachedApiKey: string | null = null
 
 async function tryReadFile(filePath: string): Promise<string | null> {
   try {
@@ -74,59 +70,8 @@ async function getPort(): Promise<number> {
   return 8004
 }
 
-export async function getApiKey(): Promise<string> {
-  if (cachedApiKey !== null) return cachedApiKey
-
-  // Dev mode: key injected at build time by Vite from backend/.api_key.
-  // The Tauri fs API is unavailable in a plain browser — don't try.
-  if (import.meta.env.DEV) {
-    cachedApiKey = __DEV_API_KEY__
-    if (cachedApiKey) {
-      console.log(`[client] getApiKey: using injected dev key (length=${cachedApiKey.length})`)
-    } else {
-      console.warn('[client] getApiKey: __DEV_API_KEY__ is empty — start the backend then restart Vite')
-    }
-    return cachedApiKey
-  }
-
-  // Production: read from %APPDATA%\dev.hime.app\.env via Tauri fs API.
-  try {
-    const { appDataDir } = await import('@tauri-apps/api/path')
-    const dir = await appDataDir()
-    const envPath = `${dir}.env`
-    console.log(`[client] getApiKey: reading ${envPath}`)
-    const content = await tryReadFile(envPath)
-    if (content) {
-      console.log(`[client] getApiKey: .env read OK (${content.length} bytes)`)
-      const match = content.match(/^API_KEY\s*=\s*(.+)$/m)
-      if (match) {
-        cachedApiKey = match[1].trim()
-        console.log(`[client] getApiKey: API_KEY found (length=${cachedApiKey.length})`)
-        return cachedApiKey
-      }
-      console.warn('[client] getApiKey: .env exists but has no API_KEY= line. Content preview:', content.slice(0, 200))
-    } else {
-      console.warn(`[client] getApiKey: .env not found or empty at ${envPath}`)
-    }
-  } catch (err) {
-    console.warn('[client] getApiKey: appDataDir() failed:', err)
-  }
-
-  console.error('[client] getApiKey: no API key found — requests will fail with 401.')
-  return ''
-}
-
-export function setApiKey(key: string): void {
-  cachedApiKey = key
-  localStorage.setItem('hime_api_key', key)
-  console.log('[client] API key saved to localStorage')
-}
-
 export async function getBaseUrl(): Promise<string> {
   if (import.meta.env.DEV) {
-    // Dev mode: Vite proxy handles routing to the backend.
-    // Use the same origin so requests are proxied, not sent directly.
-    // This works for both  npm run vite  and  tauri dev.
     console.debug(`[client] baseUrl = ${window.location.origin} (dev/proxy mode)`)
     return window.location.origin
   }
@@ -145,11 +90,7 @@ export async function getBaseUrl(): Promise<string> {
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const baseUrl = await getBaseUrl()
-  const apiKey = await getApiKey()
   const headers = new Headers(init.headers)
-  if (apiKey) {
-    headers.set('X-API-Key', apiKey)
-  }
   if (!headers.has('Content-Type') && init.body) {
     headers.set('Content-Type', 'application/json')
   }
@@ -157,22 +98,18 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 }
 
 export async function createWebSocket(jobId: number): Promise<WebSocket> {
-  const apiKey = await getApiKey()
   if (import.meta.env.DEV) {
-    // Dev mode: route WebSocket through the Vite proxy (/ws → backend)
     const wsOrigin = window.location.origin.replace(/^http/, 'ws')
-    return new WebSocket(`${wsOrigin}/ws/translate/${jobId}?api_key=${encodeURIComponent(apiKey)}`)
+    return new WebSocket(`${wsOrigin}/ws/translate/${jobId}`)
   }
   const port = await getPort()
-  return new WebSocket(`ws://127.0.0.1:${port}/ws/translate/${jobId}?api_key=${encodeURIComponent(apiKey)}`)
+  return new WebSocket(`ws://127.0.0.1:${port}/ws/translate/${jobId}`)
 }
 
 export async function checkBackendOnline(): Promise<boolean> {
   try {
     const baseUrl = await getBaseUrl()
-    const apiKey = await getApiKey()
     const res = await fetch(`${baseUrl}/health`, {
-      headers: { 'X-API-Key': apiKey },
       signal: AbortSignal.timeout(2000),
     })
     return res.ok

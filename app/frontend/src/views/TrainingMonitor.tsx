@@ -9,15 +9,18 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts'
-import type { CheckpointInfo, GGUFModelInfo, LossPoint, RunInfo, TrainingStatus } from '../api/training'
+import type { CheckpointInfo, GGUFModelInfo, LossPoint, RunInfo, TrainingProcess, TrainingStatus } from '../api/training'
 import {
   createTrainingEventSource,
   fetchAllRuns,
   fetchGGUFModels,
   getCheckpoints,
   getLossHistory,
+  getRunningProcesses,
   getTrainingLog,
   getTrainingStatus,
+  startTraining,
+  stopTraining,
 } from '../api/training'
 
 // ---------------------------------------------------------------------------
@@ -81,6 +84,16 @@ function pipelineRoleStyle(role: string | null): string {
   return 'bg-zinc-800 text-zinc-400'
 }
 
+// Relative time helper
+function relativeTime(isoDate: string): string {
+  const diffMs = Date.now() - new Date(isoDate).getTime()
+  const mins = Math.floor(diffMs / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`
+  const hrs = Math.floor(mins / 60)
+  return `${hrs} hour${hrs === 1 ? '' : 's'} ago`
+}
+
 // ---------------------------------------------------------------------------
 // TrainingMonitor
 // ---------------------------------------------------------------------------
@@ -100,6 +113,15 @@ export function TrainingMonitor() {
   const [sseConnected, setSseConnected] = useState(false)
   const [secondsAgo, setSecondsAgo] = useState(0)
 
+  // Training controls state
+  const [trainingEpochs, setTrainingEpochs] = useState(3)
+  const [condaEnv, setCondaEnv] = useState('hime')
+  const [selectedCheckpoint, setSelectedCheckpoint] = useState<string | null>(null)
+  const [runningProcesses, setRunningProcesses] = useState<TrainingProcess[]>([])
+  const [controlError, setControlError] = useState<string | null>(null)
+  const [confirmAction, setConfirmAction] = useState<'start' | 'stop' | null>(null)
+  const [controlLoading, setControlLoading] = useState(false)
+
   const isWindowVisible = useStore(s => s.isWindowVisible)
 
   const logEndRef = useRef<HTMLDivElement>(null)
@@ -110,19 +132,21 @@ export function TrainingMonitor() {
   // Mount effect: fetch runs and GGUF models in parallel, then select first run
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      setLoadError('Request timed out after 10 seconds — check that the backend is running and the API key is valid.')
+      setLoadError('Request timed out after 10 seconds — check that the backend is running.')
       setRunsLoaded(true)
     }, 10_000)
 
-    Promise.allSettled([fetchAllRuns(), fetchGGUFModels()]).then(([runsResult, ggufResult]) => {
+    Promise.allSettled([fetchAllRuns(), fetchGGUFModels(), getRunningProcesses()]).then(([runsResult, ggufResult, procResult]) => {
       clearTimeout(timeoutId)
       if (runsResult.status === 'rejected') {
         setLoadError(String(runsResult.reason))
       }
       const loadedRuns = runsResult.status === 'fulfilled' ? runsResult.value : []
       const loadedGguf = ggufResult.status === 'fulfilled' ? ggufResult.value : []
+      const loadedProcs = procResult.status === 'fulfilled' ? procResult.value : []
       setRuns(loadedRuns)
       setGgufModels(loadedGguf)
+      setRunningProcesses(loadedProcs)
       setSelectedRun(loadedRuns[0]?.run_name ?? null)
       setRunsLoaded(true)
     })
@@ -134,6 +158,16 @@ export function TrainingMonitor() {
   useEffect(() => {
     selectedRunRef.current = selectedRun
   }, [selectedRun])
+
+  // Auto-select best checkpoint when checkpoints load
+  useEffect(() => {
+    if (checkpoints.length === 0) {
+      setSelectedCheckpoint(null)
+      return
+    }
+    const best = checkpoints.find(c => c.is_best) ?? checkpoints.find(c => c.is_last) ?? null
+    setSelectedCheckpoint(best ? best.name : null)
+  }, [checkpoints])
 
   // selectedRun effect: load data and connect SSE for the selected run
   useEffect(() => {
@@ -198,6 +232,17 @@ export function TrainingMonitor() {
           setLogLines(prev => {
             const next = [...prev, line]
             return next.length > 100 ? next.slice(-100) : next
+          })
+        } catch { /* ignore */ }
+      })
+
+      es.addEventListener('loss_point', (e: MessageEvent<string>) => {
+        if (aborted) return
+        try {
+          const point = JSON.parse(e.data) as LossPoint
+          setLossHistory(prev => {
+            const next = [...prev, point]
+            return next.length > 1000 ? next.slice(-1000) : next
           })
         } catch { /* ignore */ }
       })
@@ -273,6 +318,48 @@ export function TrainingMonitor() {
 
   const bestCp = checkpoints.find(c => c.is_best) ?? checkpoints.find(c => c.is_last) ?? null
 
+  // Running process for selected run
+  const runningProcess = selectedRun
+    ? runningProcesses.find(p => p.model_name === selectedRun) ?? null
+    : null
+
+  async function handleConfirmStart() {
+    if (!selectedRun) return
+    setControlLoading(true)
+    setControlError(null)
+    try {
+      await startTraining({
+        model_name: selectedRun,
+        resume_checkpoint: selectedCheckpoint,
+        epochs: trainingEpochs,
+        conda_env: condaEnv,
+      })
+      const procs = await getRunningProcesses()
+      setRunningProcesses(procs)
+    } catch (e) {
+      setControlError(String(e))
+    } finally {
+      setControlLoading(false)
+      setConfirmAction(null)
+    }
+  }
+
+  async function handleConfirmStop() {
+    if (!selectedRun) return
+    setControlLoading(true)
+    setControlError(null)
+    try {
+      await stopTraining(selectedRun)
+      const procs = await getRunningProcesses()
+      setRunningProcesses(procs)
+    } catch (e) {
+      setControlError(String(e))
+    } finally {
+      setControlLoading(false)
+      setConfirmAction(null)
+    }
+  }
+
   // Loading / error / empty screen
   if (!runsLoaded || runs.length === 0) {
     return (
@@ -286,9 +373,6 @@ export function TrainingMonitor() {
           <div className="text-center space-y-3 max-w-lg px-6">
             <p className="text-red-400 text-sm font-medium">Failed to load training data</p>
             <p className="text-zinc-500 text-xs font-mono break-all">{loadError}</p>
-            <p className="text-zinc-600 text-xs">
-              Check that the API key is valid and the backend is reachable.
-            </p>
           </div>
         ) : (
           <div className="text-center space-y-2">
@@ -304,6 +388,62 @@ export function TrainingMonitor() {
 
   return (
     <div className="p-6 space-y-6 overflow-y-auto h-full">
+
+      {/* Confirmation modal */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-md w-full mx-4 space-y-4">
+            {confirmAction === 'start' ? (
+              <>
+                <h3 className="text-zinc-200 font-semibold">Start Training?</h3>
+                <p className="text-zinc-400 text-sm">
+                  Start training <span className="text-zinc-200">{selectedRun}</span>
+                  {selectedCheckpoint
+                    ? <> from checkpoint <span className="text-zinc-200 font-mono">{selectedCheckpoint}</span></>
+                    : <> from scratch</>
+                  }? This will use your GPU.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-zinc-200 font-semibold">Stop Training?</h3>
+                <p className="text-zinc-400 text-sm">
+                  The model will finish its current step and save a checkpoint before stopping.
+                </p>
+              </>
+            )}
+            {controlError && (
+              <p className="text-red-400 text-xs font-mono break-all">{controlError}</p>
+            )}
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setConfirmAction(null); setControlError(null) }}
+                className="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+                disabled={controlLoading}
+              >
+                Cancel
+              </button>
+              {confirmAction === 'start' ? (
+                <button
+                  onClick={() => void handleConfirmStart()}
+                  className="px-4 py-2 rounded-lg text-sm bg-green-700 hover:bg-green-600 text-white transition-colors disabled:opacity-50"
+                  disabled={controlLoading}
+                >
+                  {controlLoading ? 'Starting…' : 'Start Training'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => void handleConfirmStop()}
+                  className="px-4 py-2 rounded-lg text-sm bg-red-700 hover:bg-red-600 text-white transition-colors disabled:opacity-50"
+                  disabled={controlLoading}
+                >
+                  {controlLoading ? 'Stopping…' : 'Stop Training'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Section 0: Run Selector */}
       <div className="flex flex-wrap gap-2 mb-2">
@@ -325,6 +465,84 @@ export function TrainingMonitor() {
 
       {/* Content: fades when switching runs */}
       <div className={`space-y-6 transition-opacity duration-200 ${runLoading ? 'opacity-40' : 'opacity-100'}`}>
+
+        {/* Training Controls */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+          <h3 className="text-sm font-medium text-zinc-400 mb-4">Training Controls</h3>
+
+          {runningProcess ? (
+            /* Running state */
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse" />
+                <span className="text-green-400 text-sm font-medium">Training in progress</span>
+              </div>
+              <div className="text-xs text-zinc-500 space-y-1">
+                <div>PID: <span className="font-mono text-zinc-400">{runningProcess.pid}</span></div>
+                <div>Started {relativeTime(runningProcess.started_at)}</div>
+              </div>
+              <button
+                onClick={() => setConfirmAction('stop')}
+                className="px-4 py-2 rounded-lg text-sm bg-red-800 hover:bg-red-700 text-white transition-colors"
+              >
+                Stop Training
+              </button>
+            </div>
+          ) : (
+            /* Idle/Interrupted/Complete state */
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Resume from checkpoint</label>
+                  <select
+                    value={selectedCheckpoint ?? ''}
+                    onChange={e => setSelectedCheckpoint(e.target.value || null)}
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                  >
+                    <option value="">Fresh start</option>
+                    {checkpoints.filter(c => !c.is_interrupted).map(cp => (
+                      <option key={cp.name} value={cp.name}>
+                        {cp.name}
+                        {cp.is_best ? ' (best)' : ''}
+                        {cp.is_last ? ' (last)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Epochs</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={trainingEpochs}
+                    onChange={e => setTrainingEpochs(Math.max(1, Math.min(10, parseInt(e.target.value) || 3)))}
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Conda env</label>
+                  <input
+                    type="text"
+                    value={condaEnv}
+                    onChange={e => setCondaEnv(e.target.value)}
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={() => setConfirmAction('start')}
+                className="px-4 py-2 rounded-lg text-sm bg-green-700 hover:bg-green-600 text-white transition-colors"
+              >
+                Start Training
+              </button>
+            </div>
+          )}
+
+          {controlError && !confirmAction && (
+            <p className="mt-2 text-red-400 text-xs font-mono break-all">{controlError}</p>
+          )}
+        </div>
 
         {/* 1. Status Header */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
@@ -383,6 +601,11 @@ export function TrainingMonitor() {
           <div className="text-xs text-zinc-500">
             {(status?.current_step ?? 0).toLocaleString()} / {(status?.max_steps ?? 0).toLocaleString()} steps
           </div>
+          {status?.eta_info && (
+            <div className="text-xs text-zinc-500 mt-1">
+              ETA: {status.eta_info.eta} — {status.eta_info.sec_per_it.toFixed(1)}s/step
+            </div>
+          )}
         </div>
 
         {/* 3. Loss Chart */}
@@ -470,15 +693,10 @@ export function TrainingMonitor() {
                     </div>
                   </div>
                   <button
-                    onClick={() =>
-                      copy(
-                        `python ${status?.scripts_path ?? ''}\\train_hime.py --resume_from_checkpoint ${cp.full_path}`,
-                        `resume-${cp.name}`
-                      )
-                    }
+                    onClick={() => copy(cp.full_path, `cp-path-${cp.name}`)}
                     className="ml-4 shrink-0 px-3 py-1.5 rounded-lg text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
                   >
-                    {copied === `resume-${cp.name}` ? 'Copied!' : 'Copy resume command'}
+                    {copied === `cp-path-${cp.name}` ? 'Copied!' : 'Copy path'}
                   </button>
                 </div>
               ))}
@@ -538,13 +756,7 @@ export function TrainingMonitor() {
           >
             {logLines.length === 0 ? (
               <div className="text-zinc-600">
-                <div>No log file yet. Start training with:</div>
-                <div className="mt-2 text-zinc-500">
-                  {'  '}cd C:\Projekte\Hime\scripts
-                </div>
-                <div className="text-zinc-500">
-                  {'  '}python train_hime.py --log-file ..\app\backend\logs\training\{selectedRun ?? 'run'}.log
-                </div>
+                No log file yet. Use Training Controls above to start a training job.
               </div>
             ) : (
               logLines.map((line, i) => (
@@ -560,21 +772,7 @@ export function TrainingMonitor() {
         {/* 6. Quick Actions */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
           <h3 className="text-sm font-medium text-zinc-400 mb-4">Quick Actions</h3>
-          {/* TODO: replace with tauri shell open() when @tauri-apps/plugin-shell is added */}
           <div className="flex flex-wrap gap-3">
-            {bestCp && (
-              <button
-                onClick={() =>
-                  copy(
-                    `python ${status?.scripts_path ?? ''}\\train_hime.py --resume_from_checkpoint ${bestCp.full_path}`,
-                    'quick-resume'
-                  )
-                }
-                className="px-4 py-2 rounded-lg text-sm bg-violet-700 hover:bg-violet-600 text-white transition-colors"
-              >
-                {copied === 'quick-resume' ? 'Copied!' : 'Copy resume command'}
-              </button>
-            )}
             {bestCp && (
               <button
                 onClick={() => copy(bestCp.full_path, 'cp-path')}
@@ -589,6 +787,17 @@ export function TrainingMonitor() {
             >
               {copied === 'script-path' ? 'Copied!' : 'Copy script path'}
             </button>
+            {bestCp && (
+              <button
+                onClick={() => {
+                  setSelectedCheckpoint(bestCp.name)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                }}
+                className="px-4 py-2 rounded-lg text-sm bg-violet-700 hover:bg-violet-600 text-white transition-colors"
+              >
+                Resume Training
+              </button>
+            )}
           </div>
         </div>
 

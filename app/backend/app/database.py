@@ -42,6 +42,12 @@ async def init_db() -> None:
                     text(f"ALTER TABLE translations ADD COLUMN {col} {dtype}")
                 )
 
+        # Add is_front_matter column to chapters if missing
+        rows_ch = (await conn.execute(text("PRAGMA table_info(chapters)"))).fetchall()
+        existing_ch = {r[1] for r in rows_ch}
+        if "is_front_matter" not in existing_ch:
+            await conn.execute(text("ALTER TABLE chapters ADD COLUMN is_front_matter BOOLEAN DEFAULT 0"))
+
         # Seed default settings (INSERT OR IGNORE preserves user changes)
         await conn.execute(text(
             "INSERT OR IGNORE INTO settings (key, value) VALUES "

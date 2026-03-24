@@ -12,9 +12,7 @@ interface AppStore {
   // Backend connectivity
   backendOnline: boolean
   backendPort: number | null
-  apiKeySet: boolean
   setBackendState: (online: boolean, port: number | null) => void
-  setApiKeySet: (v: boolean) => void
 
   // Window visibility (for pausing SSE/polling when hidden)
   isWindowVisible: boolean
@@ -45,10 +43,8 @@ export const useStore = create<AppStore>()(
     (set) => ({
       backendOnline: false,
       backendPort: null,
-      apiKeySet: false,
       setBackendState: (online, port) =>
         set({ backendOnline: online, backendPort: port }),
-      setApiKeySet: (v) => set({ apiKeySet: v }),
 
       isWindowVisible: true,
       setWindowVisible: (v) => set({ isWindowVisible: v }),

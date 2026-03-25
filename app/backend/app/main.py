@@ -18,6 +18,8 @@ from .middleware.rate_limit import limiter
 from .routers import texts, translations, training
 from .routers import epub as epub_router
 from .routers import hardware as hardware_router
+from .routers import compare as compare_router
+from .routers import models as models_router
 from .websocket import streaming
 from .services.epub_service import get_setting, scan_watch_folder
 from .services.hardware_monitor import cleanup_old_hardware_stats, get_hardware_stats, save_hardware_stats, vacuum_hardware_db
@@ -88,7 +90,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="Hime Translation API",
     description="Local-first Japanese-to-English light novel translation",
-    version="0.9.10",
+    version="0.10.0",
     lifespan=lifespan,
 )
 
@@ -131,10 +133,12 @@ app.include_router(translations.router, prefix="/api/v1")
 app.include_router(training.router, prefix="/api/v1")
 app.include_router(epub_router.router, prefix="/api/v1")
 app.include_router(hardware_router.router, prefix="/api/v1")
+app.include_router(compare_router.router, prefix="/api/v1")
+app.include_router(models_router.router, prefix="/api/v1")
 app.include_router(streaming.router)  # WebSocket — no /api/v1 prefix
 
 
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     """Liveness check — no auth required."""
-    return {"status": "ok", "app": "hime", "version": "0.9.10"}
+    return {"status": "ok", "app": "hime", "version": "0.10.0"}

@@ -1,6 +1,6 @@
 [package]
 name = "hime"
-version = "0.9.10"
+version = "0.10.0"
 description = "Hime — Local Japanese-to-English Translation Studio"
 authors = []
 edition = "2021"

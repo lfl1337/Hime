@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { ComparisonState, ModelEndpoint, ModelLiveStatus, ModelOutput } from './types/comparison'
 
 export interface HistoryEntry {
   id: number
@@ -36,6 +37,45 @@ interface AppStore {
   setSelectedParagraph: (index: number) => void
   libraryTab: 'library' | 'chapters'
   setLibraryTab: (tab: 'library' | 'chapters') => void
+
+  // Comparison tab state
+  comparison: ComparisonState
+  setComparisonSubTab: (tab: 'comparison' | 'liveview') => void
+  setComparisonInput: (text: string) => void
+  setIsComparing: (v: boolean) => void
+  setCurrentJobId: (id: number | null) => void
+  appendModelToken: (model: 'gemma' | 'deepseek' | 'qwen32b', token: string) => void
+  setModelComplete: (model: 'gemma' | 'deepseek' | 'qwen32b', output: string) => void
+  setModelError: (model: 'gemma' | 'deepseek' | 'qwen32b', error: string) => void
+  setConsensus: (text: string, done: boolean) => void
+  resetComparison: () => void
+  setModelEndpoints: (endpoints: ModelEndpoint[]) => void
+  setLiveStatus: (model: 'gemma' | 'deepseek' | 'qwen32b', status: ModelLiveStatus) => void
+}
+
+const INITIAL_MODEL_OUTPUT: ModelOutput = { text: '', done: false, error: null, timedOut: false }
+const INITIAL_LIVE_STATUS: ModelLiveStatus = {
+  inferenceOnline: false, inferenceEndpoint: null, loadedModel: null,
+  isTraining: false, trainingProgress: null
+}
+const INITIAL_COMPARISON_STATE: ComparisonState = {
+  activeSubTab: 'comparison',
+  inputText: '',
+  isComparing: false,
+  currentJobId: null,
+  modelOutputs: {
+    gemma: { ...INITIAL_MODEL_OUTPUT },
+    deepseek: { ...INITIAL_MODEL_OUTPUT },
+    qwen32b: { ...INITIAL_MODEL_OUTPUT }
+  },
+  consensusText: '',
+  consensusDone: false,
+  modelEndpoints: [],
+  liveStatuses: {
+    gemma: { ...INITIAL_LIVE_STATUS },
+    deepseek: { ...INITIAL_LIVE_STATUS },
+    qwen32b: { ...INITIAL_LIVE_STATUS }
+  },
 }
 
 export const useStore = create<AppStore>()(
@@ -67,6 +107,54 @@ export const useStore = create<AppStore>()(
       setSelectedParagraph: (index) => set({ selectedParagraphIndex: index }),
       libraryTab: 'library',
       setLibraryTab: (tab) => set({ libraryTab: tab }),
+
+      comparison: { ...INITIAL_COMPARISON_STATE },
+      setComparisonSubTab: (tab) => set(s => ({ comparison: { ...s.comparison, activeSubTab: tab } })),
+      setComparisonInput: (text) => set(s => ({ comparison: { ...s.comparison, inputText: text } })),
+      setIsComparing: (v) => set(s => ({ comparison: { ...s.comparison, isComparing: v } })),
+      setCurrentJobId: (id) => set(s => ({ comparison: { ...s.comparison, currentJobId: id } })),
+      appendModelToken: (model, token) => set(s => ({
+        comparison: {
+          ...s.comparison,
+          modelOutputs: {
+            ...s.comparison.modelOutputs,
+            [model]: { ...s.comparison.modelOutputs[model], text: s.comparison.modelOutputs[model].text + token }
+          }
+        }
+      })),
+      setModelComplete: (model, output) => set(s => ({
+        comparison: {
+          ...s.comparison,
+          modelOutputs: {
+            ...s.comparison.modelOutputs,
+            [model]: { ...s.comparison.modelOutputs[model], text: output, done: true }
+          }
+        }
+      })),
+      setModelError: (model, error) => set(s => ({
+        comparison: {
+          ...s.comparison,
+          modelOutputs: {
+            ...s.comparison.modelOutputs,
+            [model]: { ...s.comparison.modelOutputs[model], error, done: true }
+          }
+        }
+      })),
+      setConsensus: (text, done) => set(s => ({ comparison: { ...s.comparison, consensusText: text, consensusDone: done } })),
+      resetComparison: () => set(s => ({
+        comparison: {
+          ...INITIAL_COMPARISON_STATE,
+          modelEndpoints: s.comparison.modelEndpoints,
+          liveStatuses: s.comparison.liveStatuses,
+        }
+      })),
+      setModelEndpoints: (endpoints) => set(s => ({ comparison: { ...s.comparison, modelEndpoints: endpoints } })),
+      setLiveStatus: (model, status) => set(s => ({
+        comparison: {
+          ...s.comparison,
+          liveStatuses: { ...s.comparison.liveStatuses, [model]: status }
+        }
+      })),
     }),
     {
       name: 'hime-storage',

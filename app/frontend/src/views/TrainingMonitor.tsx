@@ -274,6 +274,11 @@ export function TrainingMonitor() {
   const [stopPollStart, setStopPollStart] = useState<number | null>(null)
   const stopPollRef = useRef<number | null>(null)
 
+  // "Pause live updates" — persisted across sessions; stops SSE + HW polling
+  const [liveUpdatesPaused, setLiveUpdatesPaused] = useState(() =>
+    localStorage.getItem('hime_live_paused') === '1'
+  )
+
   const isWindowVisible = useStore(s => s.isWindowVisible)
 
   const logEndRef = useRef<HTMLDivElement>(null)
@@ -333,7 +338,7 @@ export function TrainingMonitor() {
 
   // selectedRun effect: load data and connect SSE for the selected run
   useEffect(() => {
-    if (selectedRun === null || !isWindowVisible) return
+    if (selectedRun === null || !isWindowVisible || liveUpdatesPaused) return
 
     // Close old SSE
     esRef.current?.close()
@@ -449,34 +454,32 @@ export function TrainingMonitor() {
         stopPollRef.current = null
       }
     }
-  }, [selectedRun, isWindowVisible])
+  }, [selectedRun, isWindowVisible, liveUpdatesPaused])
 
   // Keep timestamp refs in sync — lets the stable 1 Hz intervals below read
   // the latest value without being recreated on every status / HW update.
   useEffect(() => { lastUpdatedRef.current = lastUpdated }, [lastUpdated])
   useEffect(() => { hwLastUpdatedRef.current = hwLastUpdated }, [hwLastUpdated])
 
-  // "X seconds ago" tickers — one stable interval each (created once on mount,
-  // destroyed on unmount).  Previously these were re-created on every status /
-  // hw-poll update via [lastUpdated] / [hwLastUpdated] deps, causing 360+
-  // micro-GC cycles per hour and unnecessary React re-renders.
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setSecondsAgo(Math.floor((Date.now() - lastUpdatedRef.current) / 1000))
-    }, 1000)
-    return () => clearInterval(id)
-  }, [])
+  // "X seconds ago" tickers — stop when window is hidden to avoid unnecessary
+  // re-renders of the large TrainingMonitor tree (~3600/hour when always-on).
+  useInterval(
+    () => setSecondsAgo(Math.floor((Date.now() - lastUpdatedRef.current) / 1000)),
+    1000,
+    isWindowVisible,
+  )
 
-  useEffect(() => {
-    const id = window.setInterval(() => {
+  useInterval(
+    () => {
       if (hwLastUpdatedRef.current !== null) {
         setHwSecondsAgo(Math.floor((Date.now() - hwLastUpdatedRef.current) / 1000))
       }
-    }, 1000)
-    return () => clearInterval(id)
-  }, [])
+    },
+    1000,
+    isWindowVisible,
+  )
 
-  // Hardware auto-polling every 10s
+  // Hardware auto-polling every 10s — stops when hidden or manually paused
   useInterval(
     () => {
       getHardwareStats()
@@ -489,7 +492,7 @@ export function TrainingMonitor() {
         .catch(() => setHwError(true))
     },
     10_000,
-    isWindowVisible,
+    isWindowVisible && !liveUpdatesPaused,
     'HW polling',
   )
 
@@ -713,33 +716,50 @@ export function TrainingMonitor() {
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-medium text-zinc-400">Hardware</h3>
-            <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">
-              {hwError ? 'Error — retrying' : 'Polling every 10s'}
+            <span className={`text-xs px-1.5 py-0.5 rounded bg-zinc-800 ${liveUpdatesPaused ? 'text-yellow-500' : hwError ? 'text-zinc-500' : 'text-zinc-500'}`}>
+              {liveUpdatesPaused ? 'Updates paused' : hwError ? 'Error — retrying' : 'Polling every 10s'}
             </span>
-            {hwSecondsAgo !== null && (
+            {!liveUpdatesPaused && hwSecondsAgo !== null && (
               <span className="text-xs text-zinc-600">
                 Updated {hwSecondsAgo}s ago
               </span>
             )}
           </div>
-          <button
-            onClick={() => {
-              setHwRefreshing(true)
-              getHardwareStats()
-                .then(s => {
-                  setHwStats(s)
-                  setHwHistory(prev => [...prev.slice(-59), s])
-                  setHwLastUpdated(Date.now())
-                  setHwError(false)
-                })
-                .catch(() => setHwError(true))
-                .finally(() => setHwRefreshing(false))
-            }}
-            disabled={hwRefreshing}
-            className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
-          >
-            {hwRefreshing ? 'Refreshing…' : 'Refresh now'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const next = !liveUpdatesPaused
+                setLiveUpdatesPaused(next)
+                if (next) localStorage.setItem('hime_live_paused', '1')
+                else localStorage.removeItem('hime_live_paused')
+              }}
+              className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
+                liveUpdatesPaused
+                  ? 'bg-yellow-800/40 hover:bg-yellow-700/50 text-yellow-400'
+                  : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {liveUpdatesPaused ? 'Resume updates' : 'Pause updates'}
+            </button>
+            <button
+              onClick={() => {
+                setHwRefreshing(true)
+                getHardwareStats()
+                  .then(s => {
+                    setHwStats(s)
+                    setHwHistory(prev => [...prev.slice(-59), s])
+                    setHwLastUpdated(Date.now())
+                    setHwError(false)
+                  })
+                  .catch(() => setHwError(true))
+                  .finally(() => setHwRefreshing(false))
+              }}
+              disabled={hwRefreshing}
+              className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
+            >
+              {hwRefreshing ? 'Refreshing…' : 'Refresh now'}
+            </button>
+          </div>
         </div>
         <div className={`grid grid-cols-3 gap-3 sm:grid-cols-6 transition-opacity ${hwError ? 'opacity-50' : 'opacity-100'}`}>
           <HwCard
@@ -1157,6 +1177,10 @@ export function TrainingMonitor() {
                 {t === 'training' ? 'Training Log' : 'Backend Log'}
               </button>
             ))}
+            {/* Line count — confirms log lines are never auto-accumulated (cap = 20) */}
+            {logTab === 'training' && (
+              <span className="text-xs text-zinc-700">{logLines.length} / 20 lines</span>
+            )}
             {/* Manual refresh — no automatic polling */}
             <button
               onClick={() => {

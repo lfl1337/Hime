@@ -1,45 +1,60 @@
-# Hime — Local Japanese-to-English Translation Studio
+# Hime
 
-Hime is a **local-first** desktop app for translating Japanese light novels into English. Everything runs on your own machine — no cloud API, no data leaves your computer. Translation is performed by local Qwen2.5-Instruct models (14B / 32B / 72B) served via llama.cpp or vllm.
+Local-first Japanese-to-English translation studio for light novels. Everything runs on your machine — no cloud API, no data leaves your computer.
+
+Translation is performed by local Qwen 2.5 and Gemma models served via llama.cpp, running a multi-stage pipeline that produces polished English output from any Japanese source text.
+
+![version](https://img.shields.io/badge/version-0.10.0-blue) ![platform](https://img.shields.io/badge/platform-Windows-lightgrey) ![license](https://img.shields.io/badge/license-private-lightgrey)
 
 ---
 
-## Project Structure
+## Views
+
+| View | Description |
+|------|-------------|
+| Translator (翻) | Paste Japanese text, stream a full pipeline translation with live token output |
+| Comparison (比) | Compare all three Stage-1 models side by side and watch the consensus form in real time |
+| Editor (編) | Review and refine completed translations paragraph by paragraph |
+| Training Monitor (訓) | Track LoRA fine-tuning runs, live loss curves, checkpoint progress, and log output |
+
+---
+
+## Translation Pipeline
+
+Three models translate in parallel. Their outputs are merged by a consensus model, then refined twice.
 
 ```
-Hime/
-├── app/
-│   ├── backend/          # FastAPI server (Python, uv)
-│   │   ├── app/
-│   │   │   ├── config.py
-│   │   │   ├── main.py
-│   │   │   ├── routers/      # texts, translations, training
-│   │   │   ├── pipeline/     # multi-stage translation pipeline
-│   │   │   ├── services/     # training monitor
-│   │   │   ├── websocket/    # streaming WebSocket
-│   │   │   └── utils/
-│   │   ├── run.py            # entry point (binds to 127.0.0.1 only)
-│   │   ├── pyproject.toml
-│   │   └── .env.example
-│   ├── frontend/         # Tauri + React (TypeScript, npm)
-│   │   ├── src/
-│   │   │   ├── api/          # typed API client
-│   │   │   ├── components/   # Sidebar, StatusBadge, …
-│   │   │   └── views/        # Translator, Editor, TrainingMonitor, …
-│   │   ├── src-tauri/        # Rust shell (sidecar spawn, capabilities)
-│   │   └── vite.config.ts
-│   └── build.bat         # One-command production build (Windows)
-├── scripts/
-│   ├── train_hime.py     # LoRA fine-tuning script (HuggingFace Trainer)
-│   ├── build_backend.py  # PyInstaller packaging helper
-│   └── …                 # data prep / scraping utilities
-├── data/
-│   ├── raw_jp/           # Japanese source texts
-│   ├── raw_en/           # English reference texts
-│   └── analysis/         # Dataset analysis outputs
-└── modelle/
-    ├── lmstudio-community/   # GGUF quantised models (not in git)
-    └── lora/                 # LoRA adapters and checkpoints
+Input (Japanese text)
+  │
+  ├── Stage 1A  Gemma 3 27B         ─┐
+  ├── Stage 1B  DeepSeek-R1 32B     ─┤  parallel
+  └── Stage 1C  Qwen 2.5 32B        ─┘
+                                     │
+               Consensus  Qwen 2.5 32B    synthesises the three drafts
+                                     │
+               Stage 2    Qwen 2.5 72B    refinement pass
+                                     │
+               Stage 3    Qwen 2.5 14B    final polish
+                                     │
+                                Output (English translation)
+```
+
+All models run locally via OpenAI-compatible endpoints (llama.cpp / vllm, ports 8001–8005). No text ever leaves the machine.
+
+---
+
+## Architecture
+
+```
+User
+  └── Tauri desktop app  (React + TypeScript, Vite)
+        └── HTTP / WebSocket  →  127.0.0.1 only
+              └── FastAPI backend  (Python 3.11, uv)
+                    ├── SQLite           source texts, translations, per-stage outputs
+                    ├── Pipeline runner  async, queue-based, WebSocket streaming
+                    ├── EPUB ingest      watch folder, chapter extraction
+                    ├── Training monitor SSE, loss history, checkpoint tracking
+                    └── Inference servers  llama.cpp / vllm, ports 8001–8005
 ```
 
 ---
@@ -48,46 +63,41 @@ Hime/
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| [uv](https://docs.astral.sh/uv/) | ≥ 0.5 | Python package manager |
-| Node.js | ≥ 20 | Frontend build |
+| [uv](https://docs.astral.sh/uv/) | >= 0.5 | Python package manager |
+| Node.js | >= 20 | Frontend build |
 | Rust / Cargo | stable | Tauri compilation |
 | [Tauri CLI](https://tauri.app/start/prerequisites/) | v2 | Desktop shell |
-| llama.cpp or vllm | — | Local inference server |
+| llama.cpp or vllm | — | Local inference servers |
 
 ---
 
 ## Setup
 
 ```bash
-# 1. Clone
-git clone <repo-url>
+# Clone
+git clone https://github.com/lfl1337/Hime.git
 cd Hime
 
-# 2. Backend — install Python dependencies
+# Backend — install Python dependencies
 cd app/backend
 uv sync
 
-# 3. Frontend — install Node dependencies
+# Frontend — install Node dependencies
 cd ../frontend
 npm install
 ```
 
-On first run the backend auto-generates a random API key and writes it to
-`app/backend/.env`. The key is printed to the console once — copy it if you
-need it elsewhere.
-
 ---
 
-## Running in Dev Mode
+## Running
 
-Open **two terminals**:
+**Development mode — two terminals:**
 
 ```bash
 # Terminal 1 — backend
 cd app/backend
 uv run python run.py
-# Starts on http://127.0.0.1:8004 (or next free port)
-# Writes the chosen port to app/backend/.runtime_port
+# Binds to 127.0.0.1, writes chosen port to .runtime_port
 
 # Terminal 2 — frontend
 cd app/frontend
@@ -96,76 +106,71 @@ npm run vite
 # Vite proxy forwards /api, /health, /ws to the backend port
 ```
 
-Or use the Tauri dev shell (combines both):
+Or launch both together via Tauri:
 
 ```bash
 cd app/frontend
 npm run tauri dev
 ```
 
----
-
-## Production Build (Windows installer)
+**Production build (Windows installer):**
 
 ```bat
 cd app
 build.bat
 ```
 
-This runs:
-1. `scripts/build_backend.py` — packages the Python backend into a single
-   `.exe` via PyInstaller and places it in
-   `app/frontend/src-tauri/binaries/`
-2. `npm run tauri build` — compiles the Tauri app and produces an NSIS
-   installer at
-   `app/frontend/src-tauri/target/release/bundle/nsis/Hime_0.1.0_x64-setup.exe`
-
-The installed app spawns the backend sidecar automatically on launch and
-kills it when the window closes.
-
----
-
-## Translation Pipeline
-
-```
-Input (Japanese text)
-  │
-  ├─ Stage 1 ── Translator A  (Gemma 27B)       ─┐
-  ├─ Stage 1 ── Translator B  (DeepSeek-R1 32B) ─┤ parallel
-  └─ Stage 1 ── Translator C  (Qwen2.5-32B)     ─┘
-                                                  │
-                        Consensus Merger  (Qwen2.5-32B)
-                        synthesises the three drafts
-                                                  │
-                        Stage 2 Refinement  (Qwen2.5-72B)
-                                                  │
-                        Stage 3 Final Polish (Qwen2.5-14B)
-                                                  │
-                               Output (English translation)
-```
-
-All inference runs on **localhost** via OpenAI-compatible endpoints
-(llama.cpp / vllm). No text ever leaves the machine.
+Packages the Python backend with PyInstaller, then compiles the Tauri app. The installer is placed in `app/frontend/src-tauri/target/release/bundle/nsis/`.
 
 ---
 
 ## Fine-Tuning
 
-The `scripts/train_hime.py` script trains a Qwen2.5-32B LoRA adapter using
-HuggingFace Trainer. Progress can be monitored in the app's **Training
-Monitor** view, which reads `trainer_state.json` files written by the
-trainer and streams live updates via SSE.
+`scripts/train_hime.py` trains a Qwen 2.5 32B LoRA adapter using HuggingFace Trainer. Start a run and switch to the **Training Monitor** view to follow progress live — loss curves, step counts, checkpoint list, and log tail.
 
 ```bash
-cd scripts
-python train_hime.py --log-file ..\app\backend\logs\training\run1.log
+python scripts/train_hime.py --log-file app/backend/logs/training/run1.log
+```
+
+---
+
+## Project Layout
+
+```
+Hime/
+├── app/
+│   ├── backend/                FastAPI server (Python, uv)
+│   │   ├── app/
+│   │   │   ├── routers/        texts, translations, training, compare, models
+│   │   │   ├── pipeline/       multi-stage runner and prompt templates
+│   │   │   ├── services/       training monitor, EPUB ingest, hardware stats
+│   │   │   └── websocket/      streaming endpoint (/ws/translate/{job_id})
+│   │   └── run.py              entry point — binds to 127.0.0.1 only
+│   ├── frontend/               Tauri + React (TypeScript, Vite)
+│   │   ├── src/
+│   │   │   ├── api/            typed HTTP and WebSocket client
+│   │   │   ├── components/     Sidebar, comparison panels, training cards
+│   │   │   ├── hooks/          useModelPolling, …
+│   │   │   └── views/          Translator, Comparison, Editor, TrainingMonitor
+│   │   └── src-tauri/          Rust shell (sidecar spawn, window management)
+│   └── build.bat               one-command Windows production build
+├── scripts/
+│   ├── train_hime.py           LoRA fine-tuning (HuggingFace Trainer)
+│   ├── build_backend.py        PyInstaller packaging helper
+│   └── bump_version.py         semver bump, tag, and push
+├── data/
+│   ├── raw_jp/                 Japanese source texts
+│   └── raw_en/                 English reference texts
+└── modelle/
+    ├── lmstudio-community/     GGUF quantised models (not in git)
+    └── lora/                   LoRA adapters and checkpoints
 ```
 
 ---
 
 ## Security
 
-- The backend binds to `127.0.0.1` only — never `0.0.0.0`
-- Every endpoint requires an `X-API-Key` header
-- All requests are written to `app/backend/logs/audit.log`
-- The `.env` file (containing the API key) is git-ignored
+- The backend binds to `127.0.0.1` exclusively — never exposed on the local network
+- All user-supplied text is sanitized for prompt-injection patterns before reaching any model
+- Every request is written to `app/backend/logs/audit.log`
+- `.env` is git-ignored

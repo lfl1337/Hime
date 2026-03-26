@@ -288,13 +288,19 @@ def get_training_status(run_name: str) -> TrainingStatus:
     max_steps = state.get("max_steps", 0)
     epoch = state.get("epoch", 0.0)
 
-    # Derive max_epochs from log_history if not directly available
-    max_epochs = 0.0
     log_history = state.get("log_history", [])
-    if log_history:
-        max_epochs = max((e.get("epoch", 0.0) for e in log_history), default=0.0)
-        # Round up to nearest integer for display
-        max_epochs = math.ceil(max_epochs) if max_epochs > 0 else 3.0
+
+    # Prefer num_train_epochs written directly by HuggingFace Trainer into trainer_state.json.
+    # Fall back to inferring from the step ratio, which avoids ceil(2.0)==2 when total is 3.
+    max_epochs = float(state.get("num_train_epochs", 0))
+    if max_epochs == 0:
+        # Infer from global_step / max_steps ratio: epoch_fraction = step_fraction
+        # => num_epochs = current_epoch / step_fraction = current_epoch * max_steps / global_step
+        if global_step > 0 and max_steps > 0 and epoch > 0:
+            max_epochs = round(epoch * max_steps / global_step)
+        if max_epochs == 0 and log_history:
+            max_log_epoch = max((e.get("epoch", 0.0) for e in log_history), default=0.0)
+            max_epochs = math.ceil(max_log_epoch) if max_log_epoch > 0 else 3.0
 
     best_model_checkpoint = state.get("best_model_checkpoint")
     best_checkpoint = Path(best_model_checkpoint).name if best_model_checkpoint else None

@@ -110,6 +110,7 @@ class StartTrainingRequest(BaseModel):
     resume_checkpoint: str | None = None
     epochs: int = 3
     model_key: str | None = None  # 'qwen32b' | 'qwen14b' | 'qwen72b' | 'gemma27b' | 'deepseek'
+    gpu_limit: int = 98
 
 
 class StopTrainingRequest(BaseModel):
@@ -125,6 +126,7 @@ async def api_start_training(body: StartTrainingRequest) -> TrainingProcess:
             resume_checkpoint=body.resume_checkpoint,
             epochs=body.epochs,
             model_key=body.model_key,
+            gpu_limit=body.gpu_limit,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))

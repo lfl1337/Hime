@@ -75,6 +75,23 @@ You are a professional Japanese to English translator specializing in yuri light
 {output}<|im_end|>"""
 
 
+def apply_gpu_limit(limit_pct: int) -> None:
+    import subprocess
+    fraction = limit_pct / 100.0
+    torch.cuda.set_per_process_memory_fraction(fraction)
+    power_watts = int(575 * fraction)
+    try:
+        subprocess.run(
+            ['nvidia-smi', '-pl', str(power_watts)],
+            capture_output=True, timeout=5
+        )
+        print(f"[INFO] GPU limit: {limit_pct}% "
+              f"({power_watts}W / {31.842 * fraction:.1f} GB VRAM reserved)")
+    except Exception:
+        print(f"[INFO] GPU memory fraction: {fraction:.2f} "
+              f"({31.842 * fraction:.1f} GB VRAM reserved)")
+
+
 def load_training_data() -> Dataset:
     """Lädt und formatiert die Trainingsdaten."""
     import time as _time
@@ -325,12 +342,16 @@ def save_adapter(model, tokenizer):
     print(f"  nächstes Modell trainieren!")
 
 
-def main(resume_from_checkpoint=None):
+def main(resume_from_checkpoint=None, gpu_limit: int = 98):
     import gc
 
     # Memory / parallelism settings — must be set before any CUDA allocation
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:512")
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
+        "expandable_segments:True,"
+        "max_split_size_mb:512,"
+        f"max_memory_fraction={gpu_limit/100:.2f}"
+    )
 
     print("=" * 60)
     print(f"  Hime - Training Script")
@@ -351,6 +372,9 @@ def main(resume_from_checkpoint=None):
     print(f"[INFO] gradient_checkpointing: unsloth")
     print(f"[INFO] optimizer: adamw_8bit")
     print(f"[INFO] bf16: True")
+
+    print(f"[INFO] GPU limit: {gpu_limit}% (~{31.842 * gpu_limit/100:.1f} GB VRAM)")
+    apply_gpu_limit(gpu_limit)
 
     # Daten laden
     train_dataset, eval_dataset = load_training_data()
@@ -410,6 +434,8 @@ if __name__ == "__main__":
     _parser = argparse.ArgumentParser(add_help=False)
     _parser.add_argument("--log-file", default=None)
     _parser.add_argument("--resume_from_checkpoint", default=None)
+    _parser.add_argument("--gpu-limit", type=int, default=98,
+                         help="GPU VRAM usage limit %% (80–100). Default 98 leaves ~400 MB free for OS.")
     _args, _ = _parser.parse_known_args()
     if _args.log_file:
         Path(_args.log_file).parent.mkdir(parents=True, exist_ok=True)
@@ -417,4 +443,4 @@ if __name__ == "__main__":
         sys.stdout = TeeOutput(sys.stdout, _log_fh)
         sys.stderr = TeeOutput(sys.stderr, _log_fh)
 
-    main(resume_from_checkpoint=_args.resume_from_checkpoint)
+    main(resume_from_checkpoint=_args.resume_from_checkpoint, gpu_limit=_args.gpu_limit)

@@ -3,6 +3,7 @@
 
 Usage:
     python scripts/bump_version.py [major|minor|patch]
+    python scripts/bump_version.py set 1.0.0
 
 Updates:
     app/VERSION                              ← source of truth
@@ -26,6 +27,13 @@ VERSION_FILE = APP / "VERSION"
 
 def read_version() -> str:
     return VERSION_FILE.read_text(encoding="utf-8").strip()
+
+
+def parse_version(v: str) -> str:
+    parts = v.split(".")
+    if len(parts) != 3 or not all(p.isdigit() for p in parts):
+        raise ValueError(f"Version must be X.Y.Z — got {v!r}")
+    return v
 
 
 def next_version(current: str, level: str) -> str:
@@ -100,15 +108,18 @@ def update_all(old: str, new: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in ("major", "minor", "patch"):
-        print("Usage: python scripts/bump_version.py [major|minor|patch]")
+    if len(sys.argv) == 3 and sys.argv[1] == "set":
+        old = read_version()
+        new = parse_version(sys.argv[2])
+    elif len(sys.argv) == 2 and sys.argv[1] in ("major", "minor", "patch"):
+        old = read_version()
+        new = next_version(old, sys.argv[1])
+    else:
+        print("Usage: python scripts/bump_version.py [major|minor|patch|set X.Y.Z]")
         sys.exit(1)
 
-    level = sys.argv[1]
-    old = read_version()
-    new = next_version(old, level)
-
-    print(f"\nBumping version: {old} -> {new}  ({level})\n")
+    label = f"set {new}" if sys.argv[1] == "set" else sys.argv[1]
+    print(f"\nBumping version: {old} -> {new}  ({label})\n")
     update_all(old, new)
 
     print("\nCommitting...")

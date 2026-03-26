@@ -82,6 +82,7 @@ export interface StartTrainingParams {
   resume_checkpoint: string | null
   epochs: number
   model_key?: string  // 'qwen32b' | 'qwen14b' | 'qwen72b' | 'gemma27b' | 'deepseek'
+  gpu_limit?: number  // default 98
 }
 
 function runQuery(run?: string): string {

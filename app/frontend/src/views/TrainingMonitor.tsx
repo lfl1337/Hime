@@ -266,10 +266,6 @@ export function TrainingMonitor() {
   const [trainingEpochs, setTrainingEpochs] = useState<number>(() =>
     parseInt(localStorage.getItem('hime_default_epochs') ?? '3') || 3
   )
-  const [gpuLimit, setGpuLimit] = useState<number>(() => {
-    const saved = localStorage.getItem('hime_gpu_limit')
-    return saved ? parseInt(saved, 10) : 98
-  })
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<string | null>(null)
   const [runningProcesses, setRunningProcesses] = useState<TrainingProcess[]>([])
   const [controlError, setControlError] = useState<string | null>(null)
@@ -291,10 +287,6 @@ export function TrainingMonitor() {
   const selectedRunRef = useRef<string | null>(null)
   const lastUpdatedRef = useRef<number>(Date.now())
   const hwLastUpdatedRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    localStorage.setItem('hime_gpu_limit', String(gpuLimit))
-  }, [gpuLimit])
 
   // Mount effect: fetch runs and GGUF models in parallel, then select first run
   useEffect(() => {
@@ -574,7 +566,6 @@ export function TrainingMonitor() {
         resume_checkpoint: selectedCheckpoint,
         epochs: trainingEpochs,
         model_key: selectedModelKey,
-        gpu_limit: gpuLimit,
       })
       const procs = await getRunningProcesses()
       setRunningProcesses(procs)
@@ -931,24 +922,6 @@ export function TrainingMonitor() {
                     className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
                   />
                 </div>
-              </div>
-              <div>
-                <label className="block text-xs text-zinc-500 mb-1">
-                  GPU Limit
-                  <span className="ml-1 text-zinc-400">
-                    {gpuLimit}% (~{(31.842 * gpuLimit / 100).toFixed(1)} GB,
-                    ~{((1 - gpuLimit / 100) * 31842).toFixed(0)} MB free)
-                  </span>
-                </label>
-                <input
-                  type="range"
-                  min={80}
-                  max={100}
-                  step={1}
-                  value={gpuLimit}
-                  onChange={e => setGpuLimit(parseInt(e.target.value, 10))}
-                  className="w-full accent-violet-500"
-                />
               </div>
               <div>
                 <label className="block text-xs text-zinc-500 mb-1">Model</label>

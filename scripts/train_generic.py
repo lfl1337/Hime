@@ -97,23 +97,6 @@ You are a professional Japanese to English translator specializing in yuri light
 {output}<|im_end|>"""
 
 
-def apply_gpu_limit(limit_pct: int) -> None:
-    import subprocess
-    fraction = limit_pct / 100.0
-    torch.cuda.set_per_process_memory_fraction(fraction)
-    power_watts = int(575 * fraction)
-    try:
-        subprocess.run(
-            ['nvidia-smi', '-pl', str(power_watts)],
-            capture_output=True, timeout=5
-        )
-        print(f"[INFO] GPU limit: {limit_pct}% "
-              f"({power_watts}W / {31.842 * fraction:.1f} GB VRAM reserved)")
-    except Exception:
-        print(f"[INFO] GPU memory fraction: {fraction:.2f} "
-              f"({31.842 * fraction:.1f} GB VRAM reserved)")
-
-
 def load_training_data(data_file: Path) -> tuple:
     """Load and format training data from JSONL file."""
     import time as _time
@@ -339,8 +322,6 @@ def main():
     parser.add_argument("--data-file",  default=None, help="Path to JSONL training data file")
     parser.add_argument("--rank",       type=int, default=None, help="LoRA rank (overrides default)")
     parser.add_argument("--output-dir", default=None, help="Output directory for checkpoints/adapter")
-    parser.add_argument("--gpu-limit",  type=int, default=98,
-                        help="GPU VRAM usage limit %% (80–100). Default 98 leaves ~400 MB free for OS.")
 
     # parse_known_args to ignore HuggingFace Trainer args passed from training_runner
     args, _ = parser.parse_known_args()
@@ -371,11 +352,7 @@ def main():
     data_file = Path(args.data_file) if args.data_file else TRAINING_DIR / "hime_training_all.jsonl"
 
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
-        "expandable_segments:True,"
-        "max_split_size_mb:512,"
-        f"max_memory_fraction={args.gpu_limit/100:.2f}"
-    )
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
     print("=" * 60)
     print(f"  Hime - Generic Training Script")
@@ -395,9 +372,6 @@ def main():
     print(f"[INFO] max_seq_length: {max_seq}")
     print(f"[INFO] grad_accum: {grad_accum}")
     print(f"[INFO] epochs: {epochs}")
-    print(f"[INFO] GPU limit: {args.gpu_limit}% (~{31.842 * args.gpu_limit/100:.1f} GB VRAM)")
-    apply_gpu_limit(args.gpu_limit)
-
     train_dataset, eval_dataset = load_training_data(data_file)
     model, tokenizer = load_model(model_hf_name, max_seq)
     model, tokenizer, resume_from = apply_lora(model, tokenizer, output_dir, args.resume)

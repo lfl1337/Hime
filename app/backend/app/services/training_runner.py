@@ -66,7 +66,6 @@ def start_training(
     resume_checkpoint: str | None = None,
     epochs: int = 3,
     model_key: str | None = None,
-    gpu_limit: int = 98,
 ) -> TrainingProcess:
     conda_env = "hime"
     # If model_key is provided, enforce the canonical run name so PID/log/checkpoint
@@ -102,7 +101,6 @@ def start_training(
             "--run-name", model_name,
             "--epochs", str(epochs),
             "--log-file", log,
-            "--gpu-limit", str(gpu_limit),
         ]
         if resume_checkpoint:
             if not re.match(r"^checkpoint-\d+$", resume_checkpoint):
@@ -123,7 +121,6 @@ def start_training(
             "python", str(script),
             "--num_train_epochs", str(epochs),
             "--log-file", log,
-            "--gpu-limit", str(gpu_limit),
         ]
         if resume_checkpoint:
             if not re.match(r"^checkpoint-\d+$", resume_checkpoint):

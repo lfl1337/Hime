@@ -75,13 +75,6 @@ You are a professional Japanese to English translator specializing in yuri light
 {output}<|im_end|>"""
 
 
-def apply_gpu_limit(limit_pct: int) -> None:
-    fraction = limit_pct / 100.0
-    torch.cuda.set_per_process_memory_fraction(fraction)
-    print(f"[INFO] GPU memory fraction: {fraction:.2f} "
-          f"({31.842 * fraction:.1f} GB VRAM reserved)")
-
-
 def load_training_data() -> Dataset:
     """Lädt und formatiert die Trainingsdaten."""
     import time as _time
@@ -332,16 +325,12 @@ def save_adapter(model, tokenizer):
     print(f"  nächstes Modell trainieren!")
 
 
-def main(resume_from_checkpoint=None, gpu_limit: int = 95):
+def main(resume_from_checkpoint=None):
     import gc
 
     # Memory / parallelism settings — must be set before any CUDA allocation
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
-        "expandable_segments:True,"
-        "max_split_size_mb:512,"
-        f"max_memory_fraction={gpu_limit/100:.2f}"
-    )
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
     print("=" * 60)
     print(f"  Hime - Training Script")
@@ -362,9 +351,6 @@ def main(resume_from_checkpoint=None, gpu_limit: int = 95):
     print(f"[INFO] gradient_checkpointing: unsloth")
     print(f"[INFO] optimizer: adamw_8bit")
     print(f"[INFO] bf16: True")
-
-    print(f"[INFO] GPU limit: {gpu_limit}% (~{31.842 * gpu_limit/100:.1f} GB VRAM, ~{31.842 * (1 - gpu_limit/100):.1f} GB free)")
-    apply_gpu_limit(gpu_limit)
 
     # Daten laden
     train_dataset, eval_dataset = load_training_data()
@@ -424,8 +410,6 @@ if __name__ == "__main__":
     _parser = argparse.ArgumentParser(add_help=False)
     _parser.add_argument("--log-file", default=None)
     _parser.add_argument("--resume_from_checkpoint", default=None)
-    _parser.add_argument("--gpu-limit", type=int, default=95,
-                         help="GPU VRAM usage limit %% (80–100). Default 95 leaves ~1.6 GB free for attention ops.")
     _args, _ = _parser.parse_known_args()
     if _args.log_file:
         Path(_args.log_file).parent.mkdir(parents=True, exist_ok=True)
@@ -433,4 +417,4 @@ if __name__ == "__main__":
         sys.stdout = TeeOutput(sys.stdout, _log_fh)
         sys.stderr = TeeOutput(sys.stderr, _log_fh)
 
-    main(resume_from_checkpoint=_args.resume_from_checkpoint, gpu_limit=_args.gpu_limit)
+    main(resume_from_checkpoint=_args.resume_from_checkpoint)

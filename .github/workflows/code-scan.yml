@@ -1,0 +1,123 @@
+name: Code Scanning (Bandit + Semgrep)
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "0 3 * * 1"  # jeden Montag 3 Uhr UTC
+
+jobs:
+  bandit:
+    name: Bandit — Python SAST
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Bandit
+        run: pip install bandit[toml]
+
+      - name: Run Bandit
+        run: |
+          bandit -r app/backend/ \
+            --severity-level medium \
+            --confidence-level medium \
+            --format json \
+            --output bandit-results.json \
+            --exclude app/backend/.venv,app/backend/venv \
+          || true
+
+      - name: Print summary
+        if: always()
+        run: |
+          echo "## Bandit Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f bandit-results.json ]; then
+            python3 -c "
+          import json, sys
+          with open('bandit-results.json') as f:
+              data = json.load(f)
+          results = data.get('results', [])
+          metrics = data.get('metrics', {})
+          total = len(results)
+          print(f'### {total} issue(s) found')
+          print()
+          print('| Severity | Confidence | File | Line | Test | Issue |')
+          print('|----------|-----------|------|------|------|-------|')
+          for r in results:
+              print(f'| {r[\"issue_severity\"]} | {r[\"issue_confidence\"]} | {r[\"filename\"]} | {r[\"line_number\"]} | {r[\"test_id\"]} | {r[\"issue_text\"][:80]} |')
+          " >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No results file found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Bandit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-results
+          path: bandit-results.json
+          retention-days: 30
+
+  semgrep:
+    name: Semgrep — Multi-language SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          semgrep scan \
+            --config "p/python" \
+            --config "p/typescript" \
+            --config "p/secrets" \
+            --config "p/owasp-top-ten" \
+            --json \
+            --output semgrep-results.json \
+            app/backend/ app/frontend/src/ scripts/ \
+          || true
+
+      - name: Print summary
+        if: always()
+        run: |
+          echo "## Semgrep Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f semgrep-results.json ]; then
+            python3 -c "
+          import json
+          with open('semgrep-results.json') as f:
+              data = json.load(f)
+          results = data.get('results', [])
+          errors = data.get('errors', [])
+          print(f'### {len(results)} finding(s), {len(errors)} error(s)')
+          print()
+          if results:
+              print('| Severity | Rule | File | Line | Message |')
+              print('|----------|------|------|------|---------|')
+              for r in results[:50]:
+                  sev = r.get('extra', {}).get('severity', 'INFO')
+                  rule = r.get('check_id', '')
+                  path = r.get('path', '')
+                  line = r.get('start', {}).get('line', '')
+                  msg = r.get('extra', {}).get('message', '')[:80]
+                  print(f'| {sev} | {rule} | {path} | {line} | {msg} |')
+          " >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No results file found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Semgrep results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-results
+          path: semgrep-results.json
+          retention-days: 30

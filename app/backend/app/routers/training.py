@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Path as FPath, Query, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ..config import _ENV_FILE, settings
 from ..services.training_monitor import (
@@ -246,6 +246,26 @@ class TrainingConfig(BaseModel):
     min_delta: float = 0.001
     min_steps: int = 0
     max_epochs: int = 3
+
+    @field_validator('target_loss', 'min_delta', mode='before')
+    @classmethod
+    def _coerce_float(cls, v: object) -> object:
+        if v is None or not isinstance(v, str):
+            return v
+        try:
+            return float(str(v).replace(',', '.'))
+        except ValueError:
+            raise ValueError(f"Invalid numeric value: {v!r}")
+
+    @field_validator('target_confirmations', 'patience', 'min_steps', 'max_epochs', mode='before')
+    @classmethod
+    def _coerce_int(cls, v: object) -> object:
+        if v is None or not isinstance(v, str):
+            return v
+        try:
+            return int(float(str(v).replace(',', '.')))
+        except ValueError:
+            raise ValueError(f"Invalid integer value: {v!r}")
 
 
 @router.get("/stop-config", response_model=TrainingConfig)

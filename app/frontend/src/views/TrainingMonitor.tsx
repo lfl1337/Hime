@@ -408,7 +408,7 @@ function SmartStopStatus({ status, stopConfig }: {
       {(mode === 'patience' || mode === 'both') && (
         <span>
           Patience{' '}
-          {sc?.patience_remaining !== null && sc?.patience !== null
+          {sc != null && sc.patience_remaining !== null && sc.patience !== null
             ? `${sc.patience_remaining}/${sc.patience} remaining`
             : stopConfig?.patience !== null && stopConfig?.patience !== undefined
               ? `${stopConfig.patience} evals configured`
@@ -417,7 +417,7 @@ function SmartStopStatus({ status, stopConfig }: {
       )}
       {(mode === 'threshold' || mode === 'both') && (
         <span>
-          Target {(sc?.target_reached_count ?? 0)}/{sc?.target_confirmations ?? stopConfig?.target_confirmations ?? 3} confirmations
+          Target {sc != null ? sc.target_reached_count : 0}/{sc != null ? sc.target_confirmations : (stopConfig?.target_confirmations ?? 3)} confirmations
           {stopConfig?.target_loss !== null && stopConfig?.target_loss !== undefined ? ` (≤ ${stopConfig.target_loss})` : ''}
         </span>
       )}
@@ -487,6 +487,7 @@ export function TrainingMonitor() {
   const [stopConfig, setStopConfig] = useState<StopConfig | null>(null)
   const [configDraft, setConfigDraft] = useState<StopConfig | null>(null)
   const [configSaving, setConfigSaving] = useState(false)
+  const [configErrors, setConfigErrors] = useState<Record<string, string>>({})
 
   // Training controls state
   const [trainingEpochs, setTrainingEpochs] = useState<number>(() =>
@@ -1523,12 +1524,29 @@ export function TrainingMonitor() {
                 <div>
                   <label className="block text-xs text-zinc-500 mb-1">Target Loss</label>
                   <input
-                    type="number" step="0.01" min="0"
+                    type="number" step="0.01" min="0" max="5"
                     value={configDraft.target_loss ?? ''}
-                    onChange={e => setConfigDraft(d => ({ ...d!, target_loss: e.target.value ? parseFloat(e.target.value) : null }))}
+                    onChange={e => {
+                      const raw = e.target.value
+                      if (raw === '') {
+                        setConfigErrors(err => ({ ...err, target_loss: '' }))
+                        setConfigDraft(d => ({ ...d!, target_loss: null }))
+                        return
+                      }
+                      const val = parseFloat(raw.replace(',', '.'))
+                      if (isNaN(val)) {
+                        setConfigErrors(err => ({ ...err, target_loss: 'Nur Zahlen erlaubt' }))
+                      } else if (val < 0) {
+                        setConfigErrors(err => ({ ...err, target_loss: 'Muss ≥ 0 sein' }))
+                      } else {
+                        setConfigErrors(err => ({ ...err, target_loss: '' }))
+                        setConfigDraft(d => ({ ...d!, target_loss: val }))
+                      }
+                    }}
                     placeholder="e.g. 0.4"
-                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                    className={`w-full bg-zinc-800 border ${configErrors.target_loss ? 'border-red-500' : 'border-zinc-700'} text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500`}
                   />
+                  {configErrors.target_loss && <p className="text-red-400 text-xs mt-1">{configErrors.target_loss}</p>}
                 </div>
                 <div>
                   <label className="block text-xs text-zinc-500 mb-1">Metric</label>
@@ -1544,11 +1562,22 @@ export function TrainingMonitor() {
                 <div>
                   <label className="block text-xs text-zinc-500 mb-1">Confirmations (consecutive hits)</label>
                   <input
-                    type="number" min="1" max="20"
+                    type="number" step="1" min="1" max="20"
                     value={configDraft.target_confirmations}
-                    onChange={e => setConfigDraft(d => ({ ...d!, target_confirmations: parseInt(e.target.value) || 3 }))}
-                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                    onChange={e => {
+                      const val = parseInt(e.target.value.replace(',', '.'), 10)
+                      if (isNaN(val)) {
+                        setConfigErrors(err => ({ ...err, target_confirmations: 'Nur Zahlen erlaubt' }))
+                      } else if (val < 1) {
+                        setConfigErrors(err => ({ ...err, target_confirmations: 'Min: 1' }))
+                      } else {
+                        setConfigErrors(err => ({ ...err, target_confirmations: '' }))
+                        setConfigDraft(d => ({ ...d!, target_confirmations: val }))
+                      }
+                    }}
+                    className={`w-full bg-zinc-800 border ${configErrors.target_confirmations ? 'border-red-500' : 'border-zinc-700'} text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500`}
                   />
+                  {configErrors.target_confirmations && <p className="text-red-400 text-xs mt-1">{configErrors.target_confirmations}</p>}
                 </div>
               </div>
             )}
@@ -1560,21 +1589,49 @@ export function TrainingMonitor() {
                 <div>
                   <label className="block text-xs text-zinc-500 mb-1">Patience (evals without improvement)</label>
                   <input
-                    type="number" min="1" max="100"
+                    type="number" step="1" min="1" max="100"
                     value={configDraft.patience ?? ''}
-                    onChange={e => setConfigDraft(d => ({ ...d!, patience: e.target.value ? parseInt(e.target.value) : null }))}
+                    onChange={e => {
+                      const raw = e.target.value
+                      if (raw === '') {
+                        setConfigErrors(err => ({ ...err, patience: '' }))
+                        setConfigDraft(d => ({ ...d!, patience: null }))
+                        return
+                      }
+                      const val = parseInt(raw.replace(',', '.'), 10)
+                      if (isNaN(val)) {
+                        setConfigErrors(err => ({ ...err, patience: 'Nur Zahlen erlaubt' }))
+                      } else if (val < 1) {
+                        setConfigErrors(err => ({ ...err, patience: 'Min: 1' }))
+                      } else {
+                        setConfigErrors(err => ({ ...err, patience: '' }))
+                        setConfigDraft(d => ({ ...d!, patience: val }))
+                      }
+                    }}
                     placeholder="e.g. 5"
-                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                    className={`w-full bg-zinc-800 border ${configErrors.patience ? 'border-red-500' : 'border-zinc-700'} text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500`}
                   />
+                  {configErrors.patience && <p className="text-red-400 text-xs mt-1">{configErrors.patience}</p>}
                 </div>
                 <div>
                   <label className="block text-xs text-zinc-500 mb-1">Min Delta (minimum improvement)</label>
                   <input
-                    type="number" step="0.0001" min="0"
+                    type="number" step="0.001" min="0" max="1"
                     value={configDraft.min_delta}
-                    onChange={e => setConfigDraft(d => ({ ...d!, min_delta: parseFloat(e.target.value) || 0.001 }))}
-                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                    onChange={e => {
+                      const val = parseFloat(e.target.value.replace(',', '.'))
+                      if (isNaN(val)) {
+                        setConfigErrors(err => ({ ...err, min_delta: 'Nur Zahlen erlaubt' }))
+                      } else if (val < 0) {
+                        setConfigErrors(err => ({ ...err, min_delta: 'Muss ≥ 0 sein' }))
+                      } else {
+                        setConfigErrors(err => ({ ...err, min_delta: '' }))
+                        setConfigDraft(d => ({ ...d!, min_delta: val }))
+                      }
+                    }}
+                    className={`w-full bg-zinc-800 border ${configErrors.min_delta ? 'border-red-500' : 'border-zinc-700'} text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500`}
                   />
+                  {configErrors.min_delta && <p className="text-red-400 text-xs mt-1">{configErrors.min_delta}</p>}
                 </div>
               </div>
             )}
@@ -1585,20 +1642,42 @@ export function TrainingMonitor() {
               <div>
                 <label className="block text-xs text-zinc-500 mb-1">Max Epochs (hard cap)</label>
                 <input
-                  type="number" min="1" max="100"
+                  type="number" step="1" min="1" max="100"
                   value={configDraft.max_epochs}
-                  onChange={e => setConfigDraft(d => ({ ...d!, max_epochs: parseInt(e.target.value) || 3 }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                  onChange={e => {
+                    const val = parseInt(e.target.value.replace(',', '.'), 10)
+                    if (isNaN(val)) {
+                      setConfigErrors(err => ({ ...err, max_epochs: 'Nur Zahlen erlaubt' }))
+                    } else if (val < 1) {
+                      setConfigErrors(err => ({ ...err, max_epochs: 'Min: 1' }))
+                    } else {
+                      setConfigErrors(err => ({ ...err, max_epochs: '' }))
+                      setConfigDraft(d => ({ ...d!, max_epochs: val }))
+                    }
+                  }}
+                  className={`w-full bg-zinc-800 border ${configErrors.max_epochs ? 'border-red-500' : 'border-zinc-700'} text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500`}
                 />
+                {configErrors.max_epochs && <p className="text-red-400 text-xs mt-1">{configErrors.max_epochs}</p>}
               </div>
               <div>
                 <label className="block text-xs text-zinc-500 mb-1">Min Steps (don't stop before)</label>
                 <input
-                  type="number" min="0"
+                  type="number" step="1" min="0" max="1000000"
                   value={configDraft.min_steps}
-                  onChange={e => setConfigDraft(d => ({ ...d!, min_steps: parseInt(e.target.value) || 0 }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                  onChange={e => {
+                    const val = parseInt(e.target.value.replace(',', '.'), 10)
+                    if (isNaN(val)) {
+                      setConfigErrors(err => ({ ...err, min_steps: 'Nur Zahlen erlaubt' }))
+                    } else if (val < 0) {
+                      setConfigErrors(err => ({ ...err, min_steps: 'Muss ≥ 0 sein' }))
+                    } else {
+                      setConfigErrors(err => ({ ...err, min_steps: '' }))
+                      setConfigDraft(d => ({ ...d!, min_steps: val }))
+                    }
+                  }}
+                  className={`w-full bg-zinc-800 border ${configErrors.min_steps ? 'border-red-500' : 'border-zinc-700'} text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500`}
                 />
+                {configErrors.min_steps && <p className="text-red-400 text-xs mt-1">{configErrors.min_steps}</p>}
               </div>
             </div>
 
@@ -1613,11 +1692,11 @@ export function TrainingMonitor() {
           {/* Footer buttons */}
           <div className="flex gap-2 p-4 border-t border-zinc-800 shrink-0">
             <button
-              disabled={configSaving}
+              disabled={configSaving || Object.values(configErrors).some(Boolean)}
               onClick={async () => {
                 setConfigSaving(true)
                 try {
-                  const saved = await updateStopConfig(configDraft)
+                  const saved = await updateStopConfig(configDraft!)
                   setStopConfig(saved)
                   setConfigPanelOpen(false)
                 } catch (e) {

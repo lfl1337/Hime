@@ -227,17 +227,14 @@ export interface StopConfig {
 }
 
 export async function getStopConfig(): Promise<StopConfig> {
-  const baseUrl = await getBaseUrl()
-  const res = await fetch(`${baseUrl}/api/v1/training/stop-config`)
+  const res = await apiFetch('/api/v1/training/stop-config')
   if (!res.ok) throw new Error('Failed to fetch training stop config')
   return res.json()
 }
 
 export async function updateStopConfig(config: StopConfig): Promise<StopConfig> {
-  const baseUrl = await getBaseUrl()
-  const res = await fetch(`${baseUrl}/api/v1/training/stop-config`, {
+  const res = await apiFetch('/api/v1/training/stop-config', {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   })
   if (!res.ok) throw new Error('Failed to update training stop config')

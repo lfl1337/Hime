@@ -75,6 +75,15 @@ async def init_db() -> None:
             )
         """))
 
+        # Indexes for common query patterns
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_hw_timestamp ON hardware_stats(timestamp)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_translations_created "
+            "ON translations(created_at)"
+        ))
+
         # Prune hardware_stats older than 24 hours
         await conn.execute(text(
             "DELETE FROM hardware_stats WHERE timestamp < datetime('now', '-24 hours')"

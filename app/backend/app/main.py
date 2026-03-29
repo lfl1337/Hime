@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 _log = logging.getLogger(__name__)
 from slowapi import _rate_limit_exceeded_handler
@@ -24,16 +25,13 @@ from .websocket import streaming
 from .services.epub_service import get_setting, scan_watch_folder
 from .services.hardware_monitor import cleanup_old_hardware_stats, get_hardware_stats, save_hardware_stats, vacuum_hardware_db
 
-DEFAULT_WATCH_FOLDER = "C:/Projekte/Hime/data/epubs/"
-
-
 async def _scan_loop() -> None:
     while True:
         await asyncio.sleep(60)
         _log.debug("EPUB scan starting...")
         t0 = time.perf_counter()
         async with AsyncSessionLocal() as session:
-            folder = await get_setting("epub_watch_folder", session) or DEFAULT_WATCH_FOLDER
+            folder = await get_setting("epub_watch_folder", session) or settings.epub_watch_folder_default
             await scan_watch_folder(folder, session)
         elapsed = time.perf_counter() - t0
         if elapsed > 10:
@@ -74,7 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     # Initial scan on startup
     async with AsyncSessionLocal() as session:
-        folder = await get_setting("epub_watch_folder", session) or DEFAULT_WATCH_FOLDER
+        folder = await get_setting("epub_watch_folder", session) or settings.epub_watch_folder_default
         await scan_watch_folder(folder, session)
     # Background tasks
     scan_task = asyncio.create_task(_scan_loop())
@@ -95,7 +93,7 @@ app = FastAPI(
 )
 
 @app.middleware("http")
-async def _log_requests(request: Request, call_next):
+async def _log_requests(request: Request, call_next) -> Response:
     t0 = time.perf_counter()
     response = await call_next(request)
     ms = (time.perf_counter() - t0) * 1000

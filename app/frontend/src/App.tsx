@@ -1,14 +1,51 @@
-import { useEffect, useState } from 'react'
+import { Component, lazy, Suspense, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Sidebar } from '@/components/Sidebar'
-import { Translator } from '@/views/Translator'
-import { Comparison } from '@/views/Comparison'
-import { Editor } from '@/views/Editor'
-import { TrainingMonitor } from '@/views/TrainingMonitor'
-import { Settings } from '@/views/Settings'
+
+const Translator = lazy(() => import('@/views/Translator').then((m) => ({ default: m.Translator })))
+const Comparison = lazy(() => import('@/views/Comparison').then((m) => ({ default: m.Comparison })))
+const Editor = lazy(() => import('@/views/Editor').then((m) => ({ default: m.Editor })))
+const TrainingMonitor = lazy(() => import('@/views/TrainingMonitor').then((m) => ({ default: m.TrainingMonitor })))
+const Settings = lazy(() => import('@/views/Settings').then((m) => ({ default: m.Settings })))
 import { checkBackendOnline } from '@/api/client'
 import { importEpub } from '@/api/epub'
 import { useStore } from '@/store'
+
+// ---------------------------------------------------------------------------
+// ErrorBoundary — catches render errors and shows them instead of black screen
+// ---------------------------------------------------------------------------
+interface ErrorBoundaryState { error: Error | null }
+class ErrorBoundary extends Component<{ children: ReactNode; label: string }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode; label: string }) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error }
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 space-y-4">
+          <p className="text-red-400 font-semibold text-sm">{this.props.label} crashed</p>
+          <pre className="text-xs font-mono text-zinc-400 bg-zinc-900 rounded-lg p-4 overflow-auto max-h-96 whitespace-pre-wrap break-all">
+            {this.state.error.message}
+            {'\n\n'}
+            {this.state.error.stack}
+          </pre>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 export function useTheme() {
   const applyTheme = (pref: 'dark' | 'light' | 'system') => {
@@ -69,13 +106,15 @@ function AppShell() {
     <div className="flex h-screen bg-zinc-950 overflow-hidden">
       <Sidebar />
       <main className="flex-1 overflow-auto relative">
-        <Routes>
-          <Route path="/" element={<Translator />} />
-          <Route path="/comparison" element={<Comparison />} />
-          <Route path="/editor" element={<Editor />} />
-          <Route path="/monitor" element={<TrainingMonitor />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
+        <Suspense fallback={<div className="flex h-screen items-center justify-center text-sm text-gray-400">Laden…</div>}>
+          <Routes>
+            <Route path="/" element={<Translator />} />
+            <Route path="/comparison" element={<Comparison />} />
+            <Route path="/editor" element={<Editor />} />
+            <Route path="/monitor" element={<ErrorBoundary label="Training Monitor"><TrainingMonitor /></ErrorBoundary>} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   )

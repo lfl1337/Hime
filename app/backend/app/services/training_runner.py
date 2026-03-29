@@ -141,27 +141,33 @@ def start_training(
             with open(_cfg_path) as _cf:
                 _cfg = _json.load(_cf)
             if _cfg.get("target_loss") is not None:
-                cmd += ["--target-loss", str(_cfg["target_loss"])]
+                val = float(_cfg["target_loss"])
+                if val > 0:
+                    cmd += ["--target-loss", str(val)]
             if _cfg.get("patience") is not None:
-                cmd += ["--patience", str(_cfg["patience"])]
+                val = int(_cfg["patience"])
+                if val > 0:
+                    cmd += ["--patience", str(val)]
             if _cfg.get("min_delta") is not None:
-                cmd += ["--min-delta", str(_cfg["min_delta"])]
+                cmd += ["--min-delta", str(float(_cfg["min_delta"]))]
             if _cfg.get("min_steps"):
-                cmd += ["--min-steps", str(_cfg["min_steps"])]
+                cmd += ["--min-steps", str(int(_cfg["min_steps"]))]
             if _cfg.get("max_epochs") is not None and _cfg["max_epochs"] != 3:
-                cmd += ["--max-epochs", str(_cfg["max_epochs"])]
+                val = int(_cfg["max_epochs"])
+                if val > 0:
+                    cmd += ["--max-epochs", str(val)]
         except Exception:
             pass  # never crash training start on config read failure
 
     _log.info("Training command: %s", " ".join(cmd))
-    _stderr_fh = open(log, "a", encoding="utf-8")
-    proc = subprocess.Popen(
-        cmd,
-        creationflags=0,
-        stdout=subprocess.DEVNULL,
-        stderr=_stderr_fh,  # Capture C-level crashes (CUDA, OOM, import errors) to log
-    )
-    _stderr_fh.close()  # Safe: child process has inherited its own copy of the fd
+    with open(log, "a", encoding="utf-8") as _stderr_fh:
+        proc = subprocess.Popen(
+            cmd,
+            creationflags=0,
+            stdout=subprocess.DEVNULL,
+            stderr=_stderr_fh,  # Capture C-level crashes (CUDA, OOM, import errors) to log
+        )
+    # Parent-Handle geschlossen; Child-Kopie des FD bleibt offen
 
     meta = {
         "pid": proc.pid,

@@ -4,7 +4,7 @@ Local-first Japanese-to-English translation studio for light novels. Everything 
 
 Translation is performed by local Qwen 2.5 and Gemma models served via llama.cpp, running a multi-stage pipeline that produces polished English output from any Japanese source text.
 
-![version](https://img.shields.io/badge/version-0.10.0-blue) ![platform](https://img.shields.io/badge/platform-Windows-lightgrey) ![license](https://img.shields.io/badge/license-private-lightgrey)
+![version](https://img.shields.io/badge/version-1.1.0-blue) ![platform](https://img.shields.io/badge/platform-Windows-lightgrey) ![license](https://img.shields.io/badge/license-private-lightgrey)
 
 ---
 

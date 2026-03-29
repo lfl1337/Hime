@@ -39,6 +39,7 @@ class Settings(BaseSettings):
         else "logs/hime-backend.log"
     )
     rate_limit_per_minute: int = 60
+    epub_watch_folder_default: str = "C:/Projekte/Hime/data/epubs/"
 
     # Training / fine-tuning paths (override via .env if needed)
     models_base_path: str = r"C:\Projekte\Hime\modelle"

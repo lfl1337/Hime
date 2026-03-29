@@ -78,6 +78,15 @@ class EtaInfo(BaseModel):
     sec_per_it: float
 
 
+class StopConfigStatus(BaseModel):
+    mode: str = "none"
+    target_loss: float | None = None
+    target_confirmations: int = 3
+    patience: int | None = None
+    patience_remaining: int | None = None
+    target_reached_count: int = 0
+
+
 class TrainingStatus(BaseModel):
     run_name: str
     model_name: str
@@ -94,6 +103,7 @@ class TrainingStatus(BaseModel):
     log_file_path: str | None
     scripts_path: str
     eta_info: EtaInfo | None = None
+    stop_config: StopConfigStatus | None = None
 
 
 class CheckpointInfo(BaseModel):
@@ -115,6 +125,7 @@ class LossPoint(BaseModel):
     train_loss: float | None
     eval_loss: float | None
     learning_rate: float | None
+    grad_norm: float | None = None
 
 
 class RunInfo(BaseModel):
@@ -265,6 +276,32 @@ def get_training_status(run_name: str) -> TrainingStatus:
     status = _derive_status(state, run_name)
     model_name = run_name
 
+    # Attach stop config status
+    _scripts_path = Path(settings.scripts_path)
+    _config_path = _scripts_path / "training_config.json"
+    _stop_cfg: StopConfigStatus | None = None
+    if _config_path.exists():
+        try:
+            with open(_config_path) as _f:
+                _cfg = json.load(_f)
+            _stop_cfg = StopConfigStatus(
+                mode=_cfg.get("stop_mode", "none"),
+                target_loss=_cfg.get("target_loss"),
+                target_confirmations=_cfg.get("target_confirmations", 3),
+                patience=_cfg.get("patience"),
+            )
+            # Try to read runtime counter state from smart_stop_state.json
+            _run_dir = _lora_base_dir() / run_name
+            _state_path = _run_dir / "smart_stop_state.json"
+            if _state_path.exists():
+                with open(_state_path) as _sf:
+                    _ss = json.load(_sf)
+                _patience_total = _cfg.get("patience") or 0
+                _stop_cfg.patience_remaining = max(0, _patience_total - _ss.get("patience_counter", 0))
+                _stop_cfg.target_reached_count = _ss.get("target_hit_count", 0)
+        except Exception:
+            pass  # never crash status on config read failure
+
     if state is None:
         return TrainingStatus(
             run_name=run_name,
@@ -282,6 +319,7 @@ def get_training_status(run_name: str) -> TrainingStatus:
             log_file_path=str(log_file) if log_file else None,
             scripts_path=str(settings.scripts_path),
             eta_info=parse_eta_from_log(run_name),
+            stop_config=_stop_cfg,
         )
 
     global_step = state.get("global_step", 0)
@@ -332,6 +370,7 @@ def get_training_status(run_name: str) -> TrainingStatus:
         log_file_path=str(log_file) if log_file else None,
         scripts_path=str(settings.scripts_path),
         eta_info=parse_eta_from_log(run_name),
+        stop_config=_stop_cfg,
     )
 
 
@@ -466,6 +505,7 @@ def get_loss_history(run_name: str) -> list[LossPoint]:
             # Training entry
             points[step].train_loss = entry["loss"]
             points[step].learning_rate = entry.get("learning_rate")
+            points[step].grad_norm = entry.get("grad_norm")
 
     return sorted(points.values(), key=lambda p: p.step)
 

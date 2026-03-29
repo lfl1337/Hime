@@ -1,6 +1,6 @@
 [package]
 name = "hime"
-version = "1.0.2"
+version = "1.1.0"
 description = "Hime — Local Japanese-to-English Translation Studio"
 authors = []
 edition = "2021"
@@ -15,6 +15,13 @@ path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
 
 [dependencies]
 tauri = { version = "2", features = [] }

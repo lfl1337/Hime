@@ -24,6 +24,10 @@ from datasets import Dataset
 from transformers import TrainerCallback, TrainingArguments
 from trl import SFTTrainer
 
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent))
+from callbacks.smart_stopping import SmartStoppingCallback
+
 # ═══════════════════════════════════════════════════════════════
 #  HIER ANPASSEN - Einfach ändern und neu starten
 # ═══════════════════════════════════════════════════════════════
@@ -202,6 +206,70 @@ def get_target_modules():
                 "gate_proj", "up_proj", "down_proj"]
 
 
+_CONFIG_PATH = Path(__file__).parent / "training_config.json"
+
+
+def _load_stop_config(cli_args) -> dict:
+    """Load stop config from training_config.json, then override with CLI args."""
+    defaults: dict = {
+        "stop_mode": "none",
+        "target_loss": None,
+        "target_loss_metric": "loss",
+        "target_confirmations": 3,
+        "patience": None,
+        "patience_metric": "eval_loss",
+        "min_delta": 0.001,
+        "min_steps": 0,
+        "max_epochs": EPOCHS,
+    }
+    if _CONFIG_PATH.exists():
+        with open(_CONFIG_PATH) as f:
+            file_config = json.load(f)
+        # Only override defaults with non-null values from config file
+        defaults.update({k: v for k, v in file_config.items() if v is not None})
+
+    # CLI args override config file (only if explicitly provided by caller)
+    if getattr(cli_args, "target_loss", None) is not None:
+        defaults["target_loss"] = cli_args.target_loss
+        if defaults["stop_mode"] == "none":
+            defaults["stop_mode"] = "threshold"
+    if getattr(cli_args, "patience", None) is not None:
+        defaults["patience"] = cli_args.patience
+        if defaults["stop_mode"] in ("none", "threshold"):
+            defaults["stop_mode"] = "patience" if defaults["target_loss"] is None else "both"
+    if getattr(cli_args, "min_delta", None) is not None:
+        defaults["min_delta"] = cli_args.min_delta
+    if getattr(cli_args, "min_steps", None) is not None:
+        defaults["min_steps"] = cli_args.min_steps
+    if getattr(cli_args, "max_epochs", None) is not None:
+        defaults["max_epochs"] = cli_args.max_epochs
+
+    return defaults
+
+
+def _build_callbacks(stop_config: dict | None) -> list:
+    """Build the callbacks list, optionally including SmartStoppingCallback."""
+    cbs = [SaveCheckpointCallback()]
+    if stop_config is None:
+        return cbs
+    mode = stop_config.get("stop_mode", "none")
+    has_target = stop_config.get("target_loss") is not None
+    has_patience = stop_config.get("patience") is not None
+    if mode != "none" and (has_target or has_patience):
+        state_file = str(OUTPUT_DIR / "smart_stop_state.json")
+        cbs.append(SmartStoppingCallback(
+            target_loss=stop_config.get("target_loss"),
+            target_loss_metric=stop_config.get("target_loss_metric", "loss"),
+            target_confirmations=stop_config.get("target_confirmations", 3),
+            patience=stop_config.get("patience"),
+            patience_metric=stop_config.get("patience_metric", "eval_loss"),
+            min_delta=stop_config.get("min_delta", 0.001),
+            min_steps=stop_config.get("min_steps", 0),
+            state_file=state_file,
+        ))
+    return cbs
+
+
 class SaveCheckpointCallback(TrainerCallback):
     """Structured log lines for checkpoint saves, epoch ends, and training lifecycle."""
 
@@ -223,7 +291,7 @@ class SaveCheckpointCallback(TrainerCallback):
         return control
 
 
-def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
+def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None, stop_config=None):
     """Startet das Training."""
     import time as _time
     print(f"\n[..] Starte Training")
@@ -236,7 +304,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
 
     training_args = TrainingArguments(
         output_dir                    = str(OUTPUT_DIR / "checkpoint"),
-        num_train_epochs              = EPOCHS,
+        num_train_epochs              = stop_config["max_epochs"] if stop_config else EPOCHS,
         per_device_train_batch_size   = BATCH_SIZE,
         per_device_eval_batch_size    = 1,            # Minimal eval VRAM usage
         gradient_accumulation_steps   = GRAD_ACCUM,
@@ -251,7 +319,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
         save_steps                    = SAVE_STEPS,
         eval_steps                    = EVAL_STEPS,
         eval_strategy                 = "steps",
-        save_total_limit              = 3,
+        save_total_limit              = None,
         load_best_model_at_end        = True,
         metric_for_best_model         = "eval_loss",
         report_to                     = "none",        # Kein WandB
@@ -275,7 +343,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None):
         max_seq_length     = MAX_SEQ_LEN,
         args               = training_args,
         packing            = True,         # Mehrere kurze Beispiele in einen Batch packen
-        callbacks          = [SaveCheckpointCallback()],
+        callbacks          = _build_callbacks(stop_config),
     )
 
     # Training starten (mit oder ohne Checkpoint)
@@ -325,7 +393,7 @@ def save_adapter(model, tokenizer):
     print(f"  nächstes Modell trainieren!")
 
 
-def main(resume_from_checkpoint=None):
+def main(resume_from_checkpoint=None, stop_config=None):
     import gc
 
     # Memory / parallelism settings — must be set before any CUDA allocation
@@ -367,7 +435,7 @@ def main(resume_from_checkpoint=None):
         print(f"[i]  Resume override via CLI: {resume_from_checkpoint}")
 
     # Training
-    trainer = train(model, tokenizer, train_dataset, eval_dataset, resume_from)
+    trainer = train(model, tokenizer, train_dataset, eval_dataset, resume_from, stop_config=stop_config)
 
     # Adapter speichern (skip if training was interrupted)
     if trainer is not None:
@@ -410,6 +478,11 @@ if __name__ == "__main__":
     _parser = argparse.ArgumentParser(add_help=False)
     _parser.add_argument("--log-file", default=None)
     _parser.add_argument("--resume_from_checkpoint", default=None)
+    _parser.add_argument("--target-loss",  type=float, default=None, help="Stop when loss <= this value")
+    _parser.add_argument("--patience",     type=int,   default=None, help="Evals without improvement before stopping")
+    _parser.add_argument("--min-delta",    type=float, default=None, help="Min improvement for patience mode")
+    _parser.add_argument("--min-steps",    type=int,   default=None, help="Don't stop before this step")
+    _parser.add_argument("--max-epochs",   type=int,   default=None, help="Max training epochs")
     _args, _ = _parser.parse_known_args()
     if _args.log_file:
         Path(_args.log_file).parent.mkdir(parents=True, exist_ok=True)
@@ -417,4 +490,5 @@ if __name__ == "__main__":
         sys.stdout = TeeOutput(sys.stdout, _log_fh)
         sys.stderr = TeeOutput(sys.stderr, _log_fh)
 
-    main(resume_from_checkpoint=_args.resume_from_checkpoint)
+    _stop_config = _load_stop_config(_args)
+    main(resume_from_checkpoint=_args.resume_from_checkpoint, stop_config=_stop_config)

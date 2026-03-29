@@ -25,6 +25,14 @@ export interface TrainingStatus {
   log_file_path: string | null
   scripts_path: string
   eta_info: EtaInfo | null
+  stop_config: {
+    mode: string
+    target_loss: number | null
+    target_confirmations: number
+    patience: number | null
+    patience_remaining: number | null
+    target_reached_count: number
+  } | null
 }
 
 export interface CheckpointInfo {
@@ -46,6 +54,7 @@ export interface LossPoint {
   train_loss: number | null
   eval_loss: number | null
   learning_rate: number | null
+  grad_norm: number | null
 }
 
 export interface RunInfo {
@@ -203,6 +212,36 @@ export async function updateTrainingConfig(key: string, value: string): Promise<
   })
   if (!res.ok) throw new Error(`training/config update failed: ${res.statusText}`)
   return res.json() as Promise<TrainingConfig>
+}
+
+export interface StopConfig {
+  stop_mode: 'none' | 'threshold' | 'patience' | 'both'
+  target_loss: number | null
+  target_loss_metric: string
+  target_confirmations: number
+  patience: number | null
+  patience_metric: string
+  min_delta: number
+  min_steps: number
+  max_epochs: number
+}
+
+export async function getStopConfig(): Promise<StopConfig> {
+  const baseUrl = await getBaseUrl()
+  const res = await fetch(`${baseUrl}/api/v1/training/stop-config`)
+  if (!res.ok) throw new Error('Failed to fetch training stop config')
+  return res.json()
+}
+
+export async function updateStopConfig(config: StopConfig): Promise<StopConfig> {
+  const baseUrl = await getBaseUrl()
+  const res = await fetch(`${baseUrl}/api/v1/training/stop-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  if (!res.ok) throw new Error('Failed to update training stop config')
+  return res.json()
 }
 
 // ---------------------------------------------------------------------------

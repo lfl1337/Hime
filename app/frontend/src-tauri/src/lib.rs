@@ -76,7 +76,45 @@ pub fn run() {
                 };
 
                 // Store child handle so on_window_event can kill it on close.
+                let child_pid = child.pid();
                 app.manage(Mutex::new(Some(child)));
+
+                // Create a Windows Job Object so all child processes (backend + training)
+                // are killed automatically when hime.exe exits.
+                #[cfg(target_os = "windows")]
+                {
+                    use windows::Win32::System::JobObjects::{
+                        AssignProcessToJobObject, CreateJobObjectW,
+                        JobObjectExtendedLimitInformation, SetInformationJobObject,
+                        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                    };
+                    use windows::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
+
+                    struct JobHandle(windows::Win32::Foundation::HANDLE);
+                    unsafe impl Send for JobHandle {}
+                    unsafe impl Sync for JobHandle {}
+
+                    unsafe {
+                        if let Ok(job) = CreateJobObjectW(None, None) {
+                            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+                            info.BasicLimitInformation.LimitFlags =
+                                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                            let _ = SetInformationJobObject(
+                                job,
+                                JobObjectExtendedLimitInformation,
+                                &info as *const _ as *const std::ffi::c_void,
+                                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                            );
+                            if let Ok(proc_handle) =
+                                OpenProcess(PROCESS_ALL_ACCESS, false, child_pid)
+                            {
+                                let _ = AssignProcessToJobObject(job, proc_handle);
+                            }
+                            // Keep the job handle alive — dropping it closes the job
+                            app.manage(JobHandle(job));
+                        }
+                    }
+                }
 
                 // Stream sidecar stdout/stderr → log file
                 let log_for_stream = Arc::clone(&log);

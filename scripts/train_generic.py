@@ -31,6 +31,10 @@ from datasets import Dataset
 from transformers import TrainerCallback, TrainingArguments
 from trl import SFTTrainer
 
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent))
+from callbacks.smart_stopping import SmartStoppingCallback
+
 
 # ---------------------------------------------------------------------------
 # Model configurations
@@ -195,6 +199,70 @@ def apply_lora(model, tokenizer, output_dir: Path, resume_path: str | None):
     return model, tokenizer, resume_path
 
 
+_CONFIG_PATH = Path(__file__).parent / "training_config.json"
+
+
+def _load_stop_config(cli_args) -> dict:
+    """Load stop config from training_config.json, then override with CLI args."""
+    defaults: dict = {
+        "stop_mode": "none",
+        "target_loss": None,
+        "target_loss_metric": "loss",
+        "target_confirmations": 3,
+        "patience": None,
+        "patience_metric": "eval_loss",
+        "min_delta": 0.001,
+        "min_steps": 0,
+        "max_epochs": None,  # resolved later from args.epochs
+    }
+    if _CONFIG_PATH.exists():
+        with open(_CONFIG_PATH) as f:
+            file_config = json.load(f)
+        # Only override defaults with non-null values from config file
+        defaults.update({k: v for k, v in file_config.items() if v is not None})
+
+    # CLI args override config file (only if explicitly provided by caller)
+    if getattr(cli_args, "target_loss", None) is not None:
+        defaults["target_loss"] = cli_args.target_loss
+        if defaults["stop_mode"] == "none":
+            defaults["stop_mode"] = "threshold"
+    if getattr(cli_args, "patience", None) is not None:
+        defaults["patience"] = cli_args.patience
+        if defaults["stop_mode"] in ("none", "threshold"):
+            defaults["stop_mode"] = "patience" if defaults["target_loss"] is None else "both"
+    if getattr(cli_args, "min_delta", None) is not None:
+        defaults["min_delta"] = cli_args.min_delta
+    if getattr(cli_args, "min_steps", None) is not None:
+        defaults["min_steps"] = cli_args.min_steps
+    if getattr(cli_args, "max_epochs", None) is not None:
+        defaults["max_epochs"] = cli_args.max_epochs
+
+    return defaults
+
+
+def _build_callbacks(stop_config: dict | None, output_dir: Path) -> list:
+    """Build the callbacks list, optionally including SmartStoppingCallback."""
+    cbs = [SaveCheckpointCallback()]
+    if stop_config is None:
+        return cbs
+    mode = stop_config.get("stop_mode", "none")
+    has_target = stop_config.get("target_loss") is not None
+    has_patience = stop_config.get("patience") is not None
+    if mode != "none" and (has_target or has_patience):
+        state_file = str(output_dir / "smart_stop_state.json")
+        cbs.append(SmartStoppingCallback(
+            target_loss=stop_config.get("target_loss"),
+            target_loss_metric=stop_config.get("target_loss_metric", "loss"),
+            target_confirmations=stop_config.get("target_confirmations", 3),
+            patience=stop_config.get("patience"),
+            patience_metric=stop_config.get("patience_metric", "eval_loss"),
+            min_delta=stop_config.get("min_delta", 0.001),
+            min_steps=stop_config.get("min_steps", 0),
+            state_file=state_file,
+        ))
+    return cbs
+
+
 class SaveCheckpointCallback(TrainerCallback):
     """Structured log lines for checkpoint saves and training lifecycle events."""
 
@@ -217,7 +285,8 @@ class SaveCheckpointCallback(TrainerCallback):
 
 
 def train(model, tokenizer, train_dataset, eval_dataset, output_dir: Path,
-          epochs: int, max_seq_len: int, grad_accum: int, resume_from: str | None):
+          epochs: int, max_seq_len: int, grad_accum: int, resume_from: str | None,
+          stop_config: dict | None = None):
     """Run training."""
     import time as _time
     adapter_name = output_dir.name
@@ -231,7 +300,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, output_dir: Path,
 
     training_args = TrainingArguments(
         output_dir=str(output_dir / "checkpoint"),
-        num_train_epochs=epochs,
+        num_train_epochs=stop_config["max_epochs"] if (stop_config and stop_config.get("max_epochs") is not None) else epochs,
         per_device_train_batch_size=BATCH_SIZE,
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=grad_accum,
@@ -268,7 +337,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, output_dir: Path,
         max_seq_length=max_seq_len,
         args=training_args,
         packing=True,
-        callbacks=[SaveCheckpointCallback()],
+        callbacks=_build_callbacks(stop_config, output_dir),
     )
 
     _train_start = _time.time()
@@ -321,7 +390,12 @@ def main():
     parser.add_argument("--log-file",   default=None, help="Tee stdout/stderr to this file")
     parser.add_argument("--data-file",  default=None, help="Path to JSONL training data file")
     parser.add_argument("--rank",       type=int, default=None, help="LoRA rank (overrides default)")
-    parser.add_argument("--output-dir", default=None, help="Output directory for checkpoints/adapter")
+    parser.add_argument("--output-dir",  default=None,  help="Output directory for checkpoints/adapter")
+    parser.add_argument("--target-loss", type=float, default=None, help="Stop when loss <= this value")
+    parser.add_argument("--patience",    type=int,   default=None, help="Evals without improvement before stopping")
+    parser.add_argument("--min-delta",   type=float, default=None, help="Min improvement for patience mode")
+    parser.add_argument("--min-steps",   type=int,   default=None, help="Don't stop before this step")
+    parser.add_argument("--max-epochs",  type=int,   default=None, help="Max training epochs")
 
     # parse_known_args to ignore HuggingFace Trainer args passed from training_runner
     args, _ = parser.parse_known_args()
@@ -351,6 +425,13 @@ def main():
 
     data_file = Path(args.data_file) if args.data_file else TRAINING_DIR / "hime_training_all.jsonl"
 
+    stop_config = _load_stop_config(args)
+    # --max-epochs overrides --epochs
+    if stop_config.get("max_epochs") is not None:
+        epochs = stop_config["max_epochs"]
+    else:
+        stop_config["max_epochs"] = epochs
+
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
@@ -376,7 +457,7 @@ def main():
     model, tokenizer = load_model(model_hf_name, max_seq)
     model, tokenizer, resume_from = apply_lora(model, tokenizer, output_dir, args.resume)
     trainer = train(model, tokenizer, train_dataset, eval_dataset, output_dir,
-                    epochs, max_seq, grad_accum, resume_from)
+                    epochs, max_seq, grad_accum, resume_from, stop_config=stop_config)
 
     if trainer is not None:
         save_adapter(model, tokenizer, output_dir)

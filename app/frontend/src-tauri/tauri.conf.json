@@ -1,6 +1,6 @@
 {
   "productName": "Hime",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "identifier": "dev.hime.app",
   "build": {
     "beforeDevCommand": "npm run vite",
@@ -11,7 +11,8 @@
   "app": {
     "windows": [
       {
-        "title": "Hime — Translation Studio",
+        "label": "main",
+        "title": "Hime",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
@@ -47,6 +48,8 @@
         "installerIcon": "icons/icon.ico"
       }
     },
-    "publisher": "Hime Project"
+    "publisher": "Hime Project",
+    "shortDescription": "Light Novel Translation Suite",
+    "longDescription": "Hime - Japanese to English Light Novel Translation Suite"
   }
 }

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import {
   ComposedChart,
@@ -8,8 +8,9 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  ReferenceLine,
 } from 'recharts'
-import type { CheckpointInfo, GGUFModelInfo, HardwareStats, LossPoint, RunInfo, TrainingProcess, TrainingStatus } from '../api/training'
+import type { CheckpointInfo, GGUFModelInfo, HardwareStats, LossPoint, RunInfo, StopConfig, TrainingProcess, TrainingStatus } from '../api/training'
 import {
   createTrainingEventSource,
   fetchAllRuns,
@@ -19,10 +20,12 @@ import {
   getHardwareStats,
   getLossHistory,
   getRunningProcesses,
+  getStopConfig,
   getTrainingLog,
   getTrainingStatus,
   startTraining,
   stopTraining,
+  updateStopConfig,
 } from '../api/training'
 
 // ---------------------------------------------------------------------------
@@ -220,6 +223,209 @@ const MODEL_TO_LORA_DIR: Record<string, string> = {
 }
 
 // ---------------------------------------------------------------------------
+// LossChart — memoized; full-featured with metric toggles, dual Y-axis, epoch markers
+// ---------------------------------------------------------------------------
+
+interface LossChartProps {
+  chartData: Array<{
+    step: number
+    epoch?: number | null
+    train_loss: number | null
+    eval_loss: number | null
+    learning_rate?: number | null
+    grad_norm?: number | null
+  }>
+  visibleMetrics: { trainLoss: boolean; evalLoss: boolean; learningRate: boolean; gradNorm: boolean }
+  epochBoundaries: Array<{ step: number; label: string }>
+  onToggleMetric: (key: keyof { trainLoss: boolean; evalLoss: boolean; learningRate: boolean; gradNorm: boolean }) => void
+}
+
+const fmtLrAxis = (v: unknown): string => {
+  const n = v as number
+  if (n === 0) return '0'
+  return n.toExponential(1)
+}
+
+const METRIC_CFG = [
+  { key: 'trainLoss'    as const, label: 'Train Loss',    color: '#7C6FCD' },
+  { key: 'evalLoss'     as const, label: 'Eval Loss',     color: '#F0997B' },
+  { key: 'learningRate' as const, label: 'Learning Rate', color: '#71717a' },
+  { key: 'gradNorm'     as const, label: 'Grad Norm',     color: '#f59e0b' },
+]
+
+const LossChart = memo(function LossChart({ chartData, visibleMetrics, epochBoundaries, onToggleMetric }: LossChartProps) {
+  const showRightAxis = visibleMetrics.learningRate || visibleMetrics.gradNorm
+  return (
+    <>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
+        {METRIC_CFG.map(({ key, label, color }) => (
+          <label
+            key={key}
+            className="flex items-center gap-1.5 cursor-pointer select-none text-xs"
+            style={{ color: visibleMetrics[key] ? color : '#52525b' }}
+          >
+            <input
+              type="checkbox"
+              checked={visibleMetrics[key]}
+              onChange={() => onToggleMetric(key)}
+              style={{ accentColor: color, cursor: 'pointer' }}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+      <ResponsiveContainer width="100%" height={260}>
+        <ComposedChart data={chartData} margin={LOSS_CHART_MARGIN}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+          <XAxis dataKey="step" tick={AXIS_TICK_LG} tickFormatter={fmtStep} />
+          <YAxis yAxisId="left" tick={AXIS_TICK_LG} tickFormatter={fmtLossAxis} width={48} />
+          {showRightAxis && (
+            <YAxis yAxisId="right" orientation="right" tick={AXIS_TICK_LG} tickFormatter={fmtLrAxis} width={64} />
+          )}
+          <Tooltip
+            contentStyle={TOOLTIP_CONTENT_STYLE}
+            labelStyle={TOOLTIP_LABEL_STYLE}
+            itemStyle={TOOLTIP_ITEM_STYLE}
+            formatter={(value: unknown, name: string) => [
+              typeof value === 'number' ? value.toFixed(6) : String(value),
+              name,
+            ]}
+            labelFormatter={fmtLossLabel}
+          />
+          {epochBoundaries.map(({ step, label }) => (
+            <ReferenceLine
+              key={step}
+              x={step}
+              yAxisId="left"
+              stroke="#3f3f46"
+              strokeDasharray="4 2"
+              label={{ value: label, position: 'insideTopRight', fill: '#71717a', fontSize: 10 }}
+            />
+          ))}
+          {visibleMetrics.trainLoss && (
+            <Line
+              yAxisId="left" type="monotone" dataKey="train_loss" name="Train Loss"
+              stroke="#7C6FCD" dot={false} activeDot={false}
+              isAnimationActive={false} connectNulls={false}
+            />
+          )}
+          {visibleMetrics.evalLoss && (
+            <Line
+              yAxisId="left" type="monotone" dataKey="eval_loss" name="Eval Loss"
+              stroke="#F0997B" dot={{ r: 4, fill: '#F0997B' }} activeDot={false}
+              isAnimationActive={false} connectNulls={false}
+            />
+          )}
+          {visibleMetrics.learningRate && (
+            <Line
+              yAxisId="right" type="monotone" dataKey="learning_rate" name="Learning Rate"
+              stroke="#71717a" dot={false} activeDot={false} strokeWidth={1}
+              isAnimationActive={false} connectNulls={false}
+            />
+          )}
+          {visibleMetrics.gradNorm && (
+            <Line
+              yAxisId="right" type="monotone" dataKey="grad_norm" name="Grad Norm"
+              stroke="#f59e0b" dot={false} activeDot={false} strokeWidth={1}
+              isAnimationActive={false} connectNulls={false}
+            />
+          )}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </>
+  )
+})
+
+// ---------------------------------------------------------------------------
+// HwChart — memoized to prevent recharts re-render on 1s timestamp ticks
+// ---------------------------------------------------------------------------
+
+interface HwChartProps { hwChartData: HardwareStats[]; hwHistoryLength: number }
+
+const HwChart = memo(function HwChart({ hwChartData, hwHistoryLength }: HwChartProps) {
+  return (
+    <div className="mt-4">
+      <div className="text-xs text-zinc-600 mb-1">Last {hwHistoryLength} samples</div>
+      <ResponsiveContainer width="100%" height={120}>
+        <ComposedChart data={hwChartData} margin={HW_CHART_MARGIN}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+          <XAxis dataKey="timestamp" hide />
+          <YAxis domain={[0, 100]} width={28} tick={AXIS_TICK_SM} />
+          <Tooltip
+            contentStyle={TOOLTIP_CONTENT_STYLE}
+            labelStyle={TOOLTIP_LABEL_STYLE}
+            itemStyle={TOOLTIP_ITEM_STYLE}
+            formatter={fmtPct}
+            labelFormatter={fmtEmpty}
+          />
+          <Line dataKey="gpu_vram_pct" stroke="#8b5cf6" dot={false} activeDot={false} name="VRAM%" isAnimationActive={false} />
+          <Line dataKey="gpu_utilization_pct" stroke="#22c55e" dot={false} activeDot={false} name="GPU%" isAnimationActive={false} />
+          <Line dataKey="ram_pct" stroke="#f59e0b" dot={false} activeDot={false} name="RAM%" isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+      <div className="flex gap-4 mt-1 text-xs text-zinc-600">
+        <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-violet-500 inline-block" />VRAM%</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-green-500 inline-block" />GPU%</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-yellow-500 inline-block" />RAM%</span>
+      </div>
+    </div>
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Default stop config
+// ---------------------------------------------------------------------------
+
+const DEFAULT_STOP_CONFIG: StopConfig = {
+  stop_mode: 'none',
+  target_loss: null,
+  target_loss_metric: 'loss',
+  target_confirmations: 3,
+  patience: null,
+  patience_metric: 'eval_loss',
+  min_delta: 0.001,
+  min_steps: 0,
+  max_epochs: 3,
+}
+
+// ---------------------------------------------------------------------------
+// SmartStopStatus — shows active smart-stop state below progress bar
+// ---------------------------------------------------------------------------
+
+function SmartStopStatus({ status, stopConfig }: {
+  status: TrainingStatus | null
+  stopConfig: StopConfig | null
+}) {
+  const sc = status?.stop_config
+  const cfgMode = stopConfig?.stop_mode ?? 'none'
+  if (!sc && cfgMode === 'none') return null
+  const mode = sc?.mode ?? cfgMode
+  if (mode === 'none') return null
+
+  return (
+    <div className="text-xs text-zinc-500 mt-1 flex flex-wrap gap-x-3">
+      <span className="text-zinc-600">Smart Stop:</span>
+      {(mode === 'patience' || mode === 'both') && (
+        <span>
+          Patience{' '}
+          {sc?.patience_remaining !== null && sc?.patience !== null
+            ? `${sc.patience_remaining}/${sc.patience} remaining`
+            : stopConfig?.patience !== null && stopConfig?.patience !== undefined
+              ? `${stopConfig.patience} evals configured`
+              : '—'}
+        </span>
+      )}
+      {(mode === 'threshold' || mode === 'both') && (
+        <span>
+          Target {(sc?.target_reached_count ?? 0)}/{sc?.target_confirmations ?? stopConfig?.target_confirmations ?? 3} confirmations
+          {stopConfig?.target_loss !== null && stopConfig?.target_loss !== undefined ? ` (≤ ${stopConfig.target_loss})` : ''}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // TrainingMonitor
 // ---------------------------------------------------------------------------
 
@@ -261,6 +467,26 @@ export function TrainingMonitor() {
 
   // Log filter state
   const [logFilter, setLogFilter] = useState<'all' | 'loss' | 'progress' | 'hardware' | 'checkpoint' | 'error'>('all')
+
+  // Metric visibility toggles for LossChart
+  const [visibleMetrics, setVisibleMetrics] = useState({
+    trainLoss: true,
+    evalLoss: true,
+    learningRate: false,
+    gradNorm: false,
+  })
+
+  const handleToggleMetric = useCallback(
+    (key: keyof typeof visibleMetrics) =>
+      setVisibleMetrics(prev => ({ ...prev, [key]: !prev[key] })),
+    [],
+  )
+
+  // Config panel state
+  const [configPanelOpen, setConfigPanelOpen] = useState(false)
+  const [stopConfig, setStopConfig] = useState<StopConfig | null>(null)
+  const [configDraft, setConfigDraft] = useState<StopConfig | null>(null)
+  const [configSaving, setConfigSaving] = useState(false)
 
   // Training controls state
   const [trainingEpochs, setTrainingEpochs] = useState<number>(() =>
@@ -311,6 +537,11 @@ export function TrainingMonitor() {
     })
 
     return () => clearTimeout(timeoutId)
+  }, [])
+
+  // Load stop config on mount
+  useEffect(() => {
+    getStopConfig().then(setStopConfig).catch(() => {})
   }, [])
 
   // Keep selectedRunRef in sync with selectedRun
@@ -464,13 +695,8 @@ export function TrainingMonitor() {
   // "X seconds ago" tickers — stop when window is hidden to avoid unnecessary
   // re-renders of the large TrainingMonitor tree (~3600/hour when always-on).
   useInterval(
-    () => setSecondsAgo(Math.floor((Date.now() - lastUpdatedRef.current) / 1000)),
-    1000,
-    isWindowVisible,
-  )
-
-  useInterval(
     () => {
+      setSecondsAgo(Math.floor((Date.now() - lastUpdatedRef.current) / 1000))
       if (hwLastUpdatedRef.current !== null) {
         setHwSecondsAgo(Math.floor((Date.now() - hwLastUpdatedRef.current) / 1000))
       }
@@ -527,23 +753,43 @@ export function TrainingMonitor() {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logLines])
 
-  // Chart data: downsample to ≤200 points to cap SVG DOM node count
+  // Chart data: downsample train_loss to ≤200 points; keep ALL eval_loss points (there are few).
+  // Bug fix: do NOT apply downsample() to the combined array — it drops ~66% of eval_loss points
+  // by index since eval entries are interspersed with much more frequent train entries.
   const chartData = useMemo(() => {
-    const evalSteps = new Set(lossHistory.filter(p => p.eval_loss !== null).map(p => p.step))
-    const trainPoints = lossHistory.filter(p => p.train_loss !== null).slice(-500)
-    const trainSteps = new Set(trainPoints.map(p => p.step))
-    const merged = lossHistory
-      .filter(p => trainSteps.has(p.step) || evalSteps.has(p.step))
+    const trainPoints = lossHistory.filter(p => p.train_loss !== null)
+    const trainDownsampled = downsample(trainPoints, 200)
+    const trainStepsKept = new Set(trainDownsampled.map(p => p.step))
+    const evalStepsAll = new Set(
+      lossHistory.filter(p => p.eval_loss !== null).map(p => p.step)
+    )
+    return lossHistory
+      .filter(p => trainStepsKept.has(p.step) || evalStepsAll.has(p.step))
       .map(p => ({
         step: p.step,
-        train_loss: trainSteps.has(p.step) ? p.train_loss : null,
-        eval_loss: p.eval_loss,
+        epoch: p.epoch,
+        train_loss: trainStepsKept.has(p.step) ? p.train_loss : null,
+        eval_loss: evalStepsAll.has(p.step) ? p.eval_loss : null,
+        learning_rate: p.learning_rate,
+        grad_norm: p.grad_norm,
       }))
-    return downsample(merged, 200)
   }, [lossHistory])
 
   // Hardware chart data: already capped at 60, memoized to avoid object churn
   const hwChartData = useMemo(() => downsample(hwHistory, 60), [hwHistory])
+
+  const epochBoundaries = useMemo(() => {
+    const boundaries: Array<{ step: number; label: string }> = []
+    let lastEpoch = -1
+    for (const p of chartData) {
+      const e = Math.floor(p.epoch ?? -1)
+      if (e > lastEpoch && e > 0) {
+        lastEpoch = e
+        boundaries.push({ step: p.step, label: `E${e}` })
+      }
+    }
+    return boundaries
+  }, [chartData])
 
   const { copied, copy } = useCopyToClipboard()
 
@@ -694,7 +940,7 @@ export function TrainingMonitor() {
       )}
 
       {/* Section 0: Run Selector */}
-      <div className="flex flex-wrap gap-2 mb-2">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
         {runs.map(run => (
           <button
             key={run.run_name}
@@ -709,6 +955,17 @@ export function TrainingMonitor() {
             {run.display_name}
           </button>
         ))}
+        <button
+          onClick={() => {
+            setConfigDraft(stopConfig ? { ...stopConfig } : { ...DEFAULT_STOP_CONFIG })
+            setConfigPanelOpen(true)
+          }}
+          className="ml-auto flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1 rounded-lg hover:bg-zinc-800"
+          title="Training Settings"
+        >
+          <span>&#9881;</span>
+          <span>Training Settings</span>
+        </button>
       </div>
 
       {/* Hardware Monitor */}
@@ -814,31 +1071,7 @@ export function TrainingMonitor() {
 
         {/* HW History Chart */}
         {hwChartData.length > 1 && (
-          <div className="mt-4">
-            <div className="text-xs text-zinc-600 mb-1">Last {hwHistory.length} samples</div>
-            <ResponsiveContainer width="100%" height={120}>
-              <ComposedChart data={hwChartData} margin={HW_CHART_MARGIN}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis dataKey="timestamp" hide />
-                <YAxis domain={[0, 100]} width={28} tick={AXIS_TICK_SM} />
-                <Tooltip
-                  contentStyle={TOOLTIP_CONTENT_STYLE}
-                  labelStyle={TOOLTIP_LABEL_STYLE}
-                  itemStyle={TOOLTIP_ITEM_STYLE}
-                  formatter={fmtPct}
-                  labelFormatter={fmtEmpty}
-                />
-                <Line dataKey="gpu_vram_pct" stroke="#8b5cf6" dot={false} activeDot={false} name="VRAM%" isAnimationActive={false} />
-                <Line dataKey="gpu_utilization_pct" stroke="#22c55e" dot={false} activeDot={false} name="GPU%" isAnimationActive={false} />
-                <Line dataKey="ram_pct" stroke="#f59e0b" dot={false} activeDot={false} name="RAM%" isAnimationActive={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-            <div className="flex gap-4 mt-1 text-xs text-zinc-600">
-              <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-violet-500 inline-block" />VRAM%</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-green-500 inline-block" />GPU%</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-yellow-500 inline-block" />RAM%</span>
-            </div>
-          </div>
+          <HwChart hwChartData={hwChartData} hwHistoryLength={hwHistory.length} />
         )}
 
       </div>
@@ -1023,6 +1256,7 @@ export function TrainingMonitor() {
               ETA: {status.eta_info.eta} — {status.eta_info.sec_per_it.toFixed(1)}s/step
             </div>
           )}
+          <SmartStopStatus status={status} stopConfig={stopConfig} />
         </div>
 
         {/* 3. Loss Chart */}
@@ -1033,48 +1267,12 @@ export function TrainingMonitor() {
               Loading chart data…
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <ComposedChart data={chartData} margin={LOSS_CHART_MARGIN}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis
-                  dataKey="step"
-                  tick={AXIS_TICK_LG}
-                  tickFormatter={fmtStep}
-                />
-                <YAxis
-                  tick={AXIS_TICK_LG}
-                  tickFormatter={fmtLossAxis}
-                  width={48}
-                />
-                <Tooltip
-                  contentStyle={TOOLTIP_CONTENT_STYLE}
-                  labelStyle={TOOLTIP_LABEL_STYLE}
-                  itemStyle={TOOLTIP_ITEM_STYLE}
-                  formatter={fmtLoss}
-                  labelFormatter={fmtLossLabel}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="train_loss"
-                  name="Train loss"
-                  stroke="#7C6FCD"
-                  dot={false}
-                  activeDot={false}
-                  isAnimationActive={false}
-                  connectNulls={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="eval_loss"
-                  name="Eval loss"
-                  stroke="#F0997B"
-                  dot={false}
-                  activeDot={false}
-                  isAnimationActive={false}
-                  connectNulls={false}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
+            <LossChart
+              chartData={chartData}
+              visibleMetrics={visibleMetrics}
+              epochBoundaries={epochBoundaries}
+              onToggleMetric={handleToggleMetric}
+            />
           )}
         </div>
 
@@ -1282,6 +1480,175 @@ export function TrainingMonitor() {
         </div>
 
       </div>
+
+      {/* Training Config Panel */}
+      {configPanelOpen && configDraft && (
+        <div
+          className="fixed inset-y-0 right-0 w-80 bg-zinc-950 border-l border-zinc-800 z-50 flex flex-col overflow-hidden"
+          style={{ boxShadow: '-4px 0 24px rgba(0,0,0,0.5)' }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-zinc-800 shrink-0">
+            <h3 className="text-sm font-medium text-zinc-200">Training Settings</h3>
+            <button
+              onClick={() => setConfigPanelOpen(false)}
+              className="text-zinc-500 hover:text-zinc-200 transition-colors text-lg leading-none"
+            >
+              &#10005;
+            </button>
+          </div>
+
+          {/* Scrollable body */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
+
+            {/* Stop Mode */}
+            <div>
+              <label className="block text-xs text-zinc-500 mb-1">Stop Mode</label>
+              <select
+                value={configDraft.stop_mode}
+                onChange={e => setConfigDraft(d => ({ ...d!, stop_mode: e.target.value as StopConfig['stop_mode'] }))}
+                className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+              >
+                <option value="none">Fixed Epochs Only</option>
+                <option value="threshold">Threshold Only</option>
+                <option value="patience">Patience Only</option>
+                <option value="both">Both (Threshold + Patience)</option>
+              </select>
+            </div>
+
+            {/* Threshold section */}
+            {(configDraft.stop_mode === 'threshold' || configDraft.stop_mode === 'both') && (
+              <div className="space-y-3 rounded-lg border border-zinc-800 p-3">
+                <div className="text-xs font-medium text-zinc-400">Threshold</div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Target Loss</label>
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={configDraft.target_loss ?? ''}
+                    onChange={e => setConfigDraft(d => ({ ...d!, target_loss: e.target.value ? parseFloat(e.target.value) : null }))}
+                    placeholder="e.g. 0.4"
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Metric</label>
+                  <select
+                    value={configDraft.target_loss_metric}
+                    onChange={e => setConfigDraft(d => ({ ...d!, target_loss_metric: e.target.value }))}
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                  >
+                    <option value="loss">Training Loss</option>
+                    <option value="eval_loss">Eval Loss</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Confirmations (consecutive hits)</label>
+                  <input
+                    type="number" min="1" max="20"
+                    value={configDraft.target_confirmations}
+                    onChange={e => setConfigDraft(d => ({ ...d!, target_confirmations: parseInt(e.target.value) || 3 }))}
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Patience section */}
+            {(configDraft.stop_mode === 'patience' || configDraft.stop_mode === 'both') && (
+              <div className="space-y-3 rounded-lg border border-zinc-800 p-3">
+                <div className="text-xs font-medium text-zinc-400">Early Stopping</div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Patience (evals without improvement)</label>
+                  <input
+                    type="number" min="1" max="100"
+                    value={configDraft.patience ?? ''}
+                    onChange={e => setConfigDraft(d => ({ ...d!, patience: e.target.value ? parseInt(e.target.value) : null }))}
+                    placeholder="e.g. 5"
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Min Delta (minimum improvement)</label>
+                  <input
+                    type="number" step="0.0001" min="0"
+                    value={configDraft.min_delta}
+                    onChange={e => setConfigDraft(d => ({ ...d!, min_delta: parseFloat(e.target.value) || 0.001 }))}
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* General */}
+            <div className="space-y-3 rounded-lg border border-zinc-800 p-3">
+              <div className="text-xs font-medium text-zinc-400">General</div>
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Max Epochs (hard cap)</label>
+                <input
+                  type="number" min="1" max="100"
+                  value={configDraft.max_epochs}
+                  onChange={e => setConfigDraft(d => ({ ...d!, max_epochs: parseInt(e.target.value) || 3 }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Min Steps (don't stop before)</label>
+                <input
+                  type="number" min="0"
+                  value={configDraft.min_steps}
+                  onChange={e => setConfigDraft(d => ({ ...d!, min_steps: parseInt(e.target.value) || 0 }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+                />
+              </div>
+            </div>
+
+            {/* Training active warning */}
+            {status?.status === 'training' && (
+              <p className="text-yellow-400 text-xs rounded-lg bg-yellow-900/20 border border-yellow-800/40 px-3 py-2">
+                Training is running — changes apply to the next training run.
+              </p>
+            )}
+          </div>
+
+          {/* Footer buttons */}
+          <div className="flex gap-2 p-4 border-t border-zinc-800 shrink-0">
+            <button
+              disabled={configSaving}
+              onClick={async () => {
+                setConfigSaving(true)
+                try {
+                  const saved = await updateStopConfig(configDraft)
+                  setStopConfig(saved)
+                  setConfigPanelOpen(false)
+                } catch (e) {
+                  console.error('[Config] save failed:', e)
+                } finally {
+                  setConfigSaving(false)
+                }
+              }}
+              className="flex-1 px-3 py-2 rounded-lg text-xs bg-violet-700 hover:bg-violet-600 text-white transition-colors disabled:opacity-50"
+            >
+              {configSaving ? 'Saving\u2026' : 'Save'}
+            </button>
+            <button
+              onClick={() => setConfigDraft({ ...DEFAULT_STOP_CONFIG })}
+              className="px-3 py-2 rounded-lg text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dev-only memory debug overlay — compiles away in production */}
+      {import.meta.env.DEV && (
+        <div
+          className="fixed bottom-2 right-2 text-xs font-mono px-2 py-1 rounded z-50 pointer-events-none"
+          style={{ background: 'rgba(0,0,0,0.85)', color: '#22c55e' }}
+        >
+          lossHistory:{lossHistory.length} hw:{hwHistory.length} log:{logLines.length} SSE:{esRef.current ? '1' : '0'}
+        </div>
+      )}
     </div>
   )
 }

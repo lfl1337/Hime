@@ -206,6 +206,45 @@ async def update_training_config(body: TrainingConfigUpdate) -> dict:
     }
 
 
+_TRAINING_CONFIG_PATH = Path(settings.scripts_path) / "training_config.json"
+
+
+class TrainingConfig(BaseModel):
+    stop_mode: str = "none"
+    target_loss: float | None = None
+    target_loss_metric: str = "loss"
+    target_confirmations: int = 3
+    patience: int | None = None
+    patience_metric: str = "eval_loss"
+    min_delta: float = 0.001
+    min_steps: int = 0
+    max_epochs: int = 3
+
+
+@router.get("/stop-config", response_model=TrainingConfig)
+async def get_stop_config():
+    """Read the smart-stop training configuration from training_config.json."""
+    if _TRAINING_CONFIG_PATH.exists():
+        with open(_TRAINING_CONFIG_PATH) as f:
+            return TrainingConfig(**json.load(f))
+    return TrainingConfig()
+
+
+@router.put("/stop-config", response_model=TrainingConfig)
+async def update_stop_config(config: TrainingConfig):
+    """Write the smart-stop training configuration to training_config.json."""
+    if config.target_loss is not None and config.target_loss <= 0:
+        raise HTTPException(status_code=400, detail="target_loss must be > 0")
+    if config.patience is not None and config.patience <= 0:
+        raise HTTPException(status_code=400, detail="patience must be > 0")
+    if config.max_epochs <= 0:
+        raise HTTPException(status_code=400, detail="max_epochs must be > 0")
+    _TRAINING_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_TRAINING_CONFIG_PATH, "w") as f:
+        json.dump(config.model_dump(), f, indent=2)
+    return config
+
+
 @router.get("/conda-envs")
 async def list_conda_envs() -> dict:
     """List available conda environment names."""

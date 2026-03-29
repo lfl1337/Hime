@@ -133,11 +133,31 @@ def start_training(
                 raise FileNotFoundError(f"Checkpoint not found: {full_cp}")
             cmd += ["--resume_from_checkpoint", str(full_cp)]
 
+    # Append smart stopping args from training_config.json
+    _cfg_path = Path(settings.scripts_path) / "training_config.json"
+    if _cfg_path.exists():
+        try:
+            import json as _json
+            with open(_cfg_path) as _cf:
+                _cfg = _json.load(_cf)
+            if _cfg.get("target_loss") is not None:
+                cmd += ["--target-loss", str(_cfg["target_loss"])]
+            if _cfg.get("patience") is not None:
+                cmd += ["--patience", str(_cfg["patience"])]
+            if _cfg.get("min_delta") is not None:
+                cmd += ["--min-delta", str(_cfg["min_delta"])]
+            if _cfg.get("min_steps"):
+                cmd += ["--min-steps", str(_cfg["min_steps"])]
+            if _cfg.get("max_epochs") is not None and _cfg["max_epochs"] != 3:
+                cmd += ["--max-epochs", str(_cfg["max_epochs"])]
+        except Exception:
+            pass  # never crash training start on config read failure
+
     _log.info("Training command: %s", " ".join(cmd))
     _stderr_fh = open(log, "a", encoding="utf-8")
     proc = subprocess.Popen(
         cmd,
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        creationflags=0,
         stdout=subprocess.DEVNULL,
         stderr=_stderr_fh,  # Capture C-level crashes (CUDA, OOM, import errors) to log
     )

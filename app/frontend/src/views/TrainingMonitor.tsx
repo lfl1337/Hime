@@ -247,14 +247,15 @@ const fmtLrAxis = (v: unknown): string => {
 }
 
 const METRIC_CFG = [
-  { key: 'trainLoss'    as const, label: 'Train Loss',    color: '#7C6FCD' },
-  { key: 'evalLoss'     as const, label: 'Eval Loss',     color: '#F0997B' },
-  { key: 'learningRate' as const, label: 'Learning Rate', color: '#71717a' },
-  { key: 'gradNorm'     as const, label: 'Grad Norm',     color: '#f59e0b' },
+  { key: 'trainLoss'    as const, label: 'Train Loss',    color: '#8B5CF6' },
+  { key: 'evalLoss'     as const, label: 'Eval Loss',     color: '#EF4444' },
+  { key: 'learningRate' as const, label: 'Learning Rate', color: '#9CA3AF' },
+  { key: 'gradNorm'     as const, label: 'Grad Norm',     color: '#F59E0B' },
 ]
 
 const LossChart = memo(function LossChart({ chartData, visibleMetrics, epochBoundaries, onToggleMetric }: LossChartProps) {
-  const showRightAxis = visibleMetrics.learningRate || visibleMetrics.gradNorm
+  const showGradNorm = visibleMetrics.gradNorm
+  const showLr = visibleMetrics.learningRate
   return (
     <>
       <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
@@ -279,8 +280,11 @@ const LossChart = memo(function LossChart({ chartData, visibleMetrics, epochBoun
           <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
           <XAxis dataKey="step" tick={AXIS_TICK_LG} tickFormatter={fmtStep} />
           <YAxis yAxisId="left" tick={AXIS_TICK_LG} tickFormatter={fmtLossAxis} width={48} />
-          {showRightAxis && (
-            <YAxis yAxisId="right" orientation="right" tick={AXIS_TICK_LG} tickFormatter={fmtLrAxis} width={64} />
+          {showGradNorm && (
+            <YAxis yAxisId="gradNorm" orientation="right" tick={AXIS_TICK_LG} tickFormatter={fmtLrAxis} width={64} />
+          )}
+          {showLr && (
+            <YAxis yAxisId="lr" orientation="right" hide={true} domain={['auto', 'auto']} />
           )}
           <Tooltip
             contentStyle={TOOLTIP_CONTENT_STYLE}
@@ -305,28 +309,28 @@ const LossChart = memo(function LossChart({ chartData, visibleMetrics, epochBoun
           {visibleMetrics.trainLoss && (
             <Line
               yAxisId="left" type="monotone" dataKey="train_loss" name="Train Loss"
-              stroke="#7C6FCD" dot={false} activeDot={false}
-              isAnimationActive={false} connectNulls={false}
+              stroke="#8B5CF6" strokeWidth={2} dot={false} activeDot={false}
+              isAnimationActive={false} connectNulls={true}
             />
           )}
           {visibleMetrics.evalLoss && (
             <Line
               yAxisId="left" type="monotone" dataKey="eval_loss" name="Eval Loss"
-              stroke="#F0997B" dot={{ r: 4, fill: '#F0997B' }} activeDot={false}
-              isAnimationActive={false} connectNulls={false}
+              stroke="#EF4444" strokeWidth={2.5} dot={{ r: 4, fill: '#EF4444' }} activeDot={false}
+              isAnimationActive={false} connectNulls={true}
             />
           )}
           {visibleMetrics.learningRate && (
             <Line
-              yAxisId="right" type="monotone" dataKey="learning_rate" name="Learning Rate"
-              stroke="#71717a" dot={false} activeDot={false} strokeWidth={1}
+              yAxisId="lr" type="monotone" dataKey="learning_rate" name="Learning Rate"
+              stroke="#9CA3AF" strokeWidth={1} strokeDasharray="4 2" dot={false} activeDot={false}
               isAnimationActive={false} connectNulls={false}
             />
           )}
           {visibleMetrics.gradNorm && (
             <Line
-              yAxisId="right" type="monotone" dataKey="grad_norm" name="Grad Norm"
-              stroke="#f59e0b" dot={false} activeDot={false} strokeWidth={1}
+              yAxisId="gradNorm" type="monotone" dataKey="grad_norm" name="Grad Norm"
+              stroke="#F59E0B" strokeWidth={1} dot={false} activeDot={false}
               isAnimationActive={false} connectNulls={false}
             />
           )}
@@ -475,6 +479,7 @@ export function TrainingMonitor() {
     learningRate: false,
     gradNorm: false,
   })
+  const [showMetricInfo, setShowMetricInfo] = useState(false)
 
   const handleToggleMetric = useCallback(
     (key: keyof typeof visibleMetrics) =>
@@ -1275,6 +1280,71 @@ export function TrainingMonitor() {
               onToggleMetric={handleToggleMetric}
             />
           )}
+
+          {/* Metric Info Panel */}
+          <div className="mt-3 border-t border-zinc-800 pt-2">
+            <button
+              onClick={() => setShowMetricInfo(v => !v)}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
+            >
+              <span>ℹ</span>
+              <span>Was bedeuten diese Werte?</span>
+              <span className="ml-1">{showMetricInfo ? '▲' : '▼'}</span>
+            </button>
+
+            {showMetricInfo && (
+              <div className="mt-3 rounded-lg bg-zinc-800/90 p-4 text-sm space-y-4">
+                <p className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                  📊 Metriken-Erklärung
+                </p>
+                <div>
+                  <p className="font-semibold text-purple-400">Train Loss</p>
+                  <p className="text-zinc-400 text-xs mt-1">Wie gut das Modell die Trainingsdaten lernt.</p>
+                  <div className="mt-1 space-y-0.5 text-xs text-zinc-400">
+                    <p>✅ Gut: &lt; 0.5 (Modell lernt effektiv)</p>
+                    <p>⚠️ Okay: 0.5 – 0.8 (lernt noch, braucht mehr Zeit)</p>
+                    <p>🔴 Hoch: &gt; 1.0 (Anfang oder Problem)</p>
+                    <p>📉 Sollte über die Zeit sinken</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="font-semibold text-red-400">Eval Loss</p>
+                  <p className="text-zinc-400 text-xs mt-1">Wie gut das Modell auf NEUEN Daten generalisiert.</p>
+                  <div className="mt-1 space-y-0.5 text-xs text-zinc-400">
+                    <p>✅ Gut: &lt; 0.95 (verbessert sich gegenüber Base Model)</p>
+                    <p>⚠️ Stagniert: Mehrere Evals ohne Verbesserung</p>
+                    <p>🔴 Steigt: Overfitting — Modell memoriert statt zu lernen</p>
+                    <p>📉 Wichtigster Indikator für echte Qualität</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="font-semibold text-zinc-400">Learning Rate</p>
+                  <p className="text-zinc-400 text-xs mt-1">Schrittgröße beim Lernen.</p>
+                  <div className="mt-1 space-y-0.5 text-xs text-zinc-400">
+                    <p>📉 Sinkt planmäßig von ~2e-4 gegen 0 (Cosine Schedule)</p>
+                    <p>ℹ️ Kein "gut" oder "schlecht" — folgt dem Scheduler</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="font-semibold text-amber-400">Grad Norm</p>
+                  <p className="text-zinc-400 text-xs mt-1">Wie stark die Gewichte pro Schritt angepasst werden.</p>
+                  <div className="mt-1 space-y-0.5 text-xs text-zinc-400">
+                    <p>✅ Stabil: 0.3 – 0.7 (gleichmäßiges Lernen)</p>
+                    <p>⚠️ Spikes: &gt; 1.0 (schwieriger Batch, normalerweise harmlos)</p>
+                    <p>🔴 Explodiert: &gt; 5.0 dauerhaft (Training instabil)</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="font-semibold text-zinc-300">Epoch-Marker (E2, E3)</p>
+                  <p className="text-zinc-400 text-xs mt-1">Start einer neuen Epoche.</p>
+                  <div className="mt-1 space-y-0.5 text-xs text-zinc-400">
+                    <p>ℹ️ Loss steigt kurz am Epochenanfang — das ist NORMAL</p>
+                    <p>📉 Sollte danach schnell wieder fallen</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* 4. Checkpoints */}

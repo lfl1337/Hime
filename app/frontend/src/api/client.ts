@@ -5,7 +5,7 @@
 //   Vite dev server, which proxies /api, /health, /ws to the backend.
 //
 // PROD mode (packaged Tauri app):
-//   getPort() reads hime-backend.lock from %APPDATA%\dev.lfl.hime\ via
+//   getPort() reads hime-backend.lock from %APPDATA%\dev.Ninym.hime\ via
 //   appDataDir() + readTextFile(), matching where run.py writes it.
 
 let cachedPort: number | null = null

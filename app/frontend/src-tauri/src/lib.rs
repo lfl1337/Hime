@@ -1,6 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{path::BaseDirectory, Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 
@@ -45,6 +46,11 @@ fn is_process_alive(_pid: u32) -> bool {
     false // Hime is Windows-only; stub for non-Windows compilation
 }
 
+/// Prevents setup() from running more than once per process.
+/// Guards against Tauri calling setup() on repeated HMR-triggered reloads
+/// and prevents log file spam on `tauri dev` restarts.
+static SETUP_GUARD: AtomicBool = AtomicBool::new(false);
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
@@ -52,6 +58,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Skip if already initialized in this process lifetime.
+            if SETUP_GUARD.swap(true, Ordering::SeqCst) {
+                return Ok(());
+            }
+
             // ── Resolve runtime paths ──────────────────────────────────────
             let app_data_dir = app
                 .path()

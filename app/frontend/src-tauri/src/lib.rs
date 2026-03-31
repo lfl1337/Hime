@@ -20,6 +20,31 @@ fn log_line(log: &LogFile, line: &str) {
     }
 }
 
+/// Stores the path to the single-instance lockfile so the window-destroy
+/// handler can delete it on clean shutdown.
+struct HimeLockPath(std::path::PathBuf);
+
+/// Returns true if a process with the given PID is currently running.
+#[cfg(target_os = "windows")]
+fn is_process_alive(pid: u32) -> bool {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    unsafe {
+        match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(handle) => {
+                let _ = CloseHandle(handle);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_process_alive(_pid: u32) -> bool {
+    false // Hime is Windows-only; stub for non-Windows compilation
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
@@ -35,6 +60,33 @@ pub fn run() {
 
             let logs_dir = app_data_dir.join("logs");
             fs::create_dir_all(&logs_dir).ok();
+
+            // ── Single-instance lockfile ──────────────────────────────────
+            let hime_lock_path = app_data_dir.join("hime.lock");
+            if hime_lock_path.exists() {
+                let stale = if let Ok(content) = fs::read_to_string(&hime_lock_path) {
+                    match content.trim().parse::<u32>() {
+                        Ok(pid) if is_process_alive(pid) => {
+                            app.dialog()
+                                .message(
+                                    "Hime läuft bereits.\n\n\
+                                     Bitte schließe die andere Instanz und versuche es erneut.",
+                                )
+                                .title("Hime — Bereits geöffnet")
+                                .blocking_show();
+                            std::process::exit(0);
+                        }
+                        _ => true, // dead PID or unparseable → stale file
+                    }
+                } else {
+                    true // unreadable → stale
+                };
+                if stale {
+                    let _ = fs::remove_file(&hime_lock_path);
+                }
+            }
+            let _ = fs::write(&hime_lock_path, std::process::id().to_string());
+            app.manage(HimeLockPath(hime_lock_path));
 
             let log_path = logs_dir.join("backend.log");
             let log_path_str = log_path.to_string_lossy().to_string();
@@ -210,6 +262,11 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
+                // Remove single-instance lockfile so the next launch is unblocked
+                if let Some(lock) = window.app_handle().try_state::<HimeLockPath>() {
+                    let _ = std::fs::remove_file(&lock.0);
+                }
+
                 type ChildMutex =
                     Mutex<Option<tauri_plugin_shell::process::CommandChild>>;
                 if let Some(mutex) = window.app_handle().try_state::<ChildMutex>() {

@@ -59,6 +59,7 @@ pub fn run() {
                 .expect("Failed to resolve AppData dir");
 
             let logs_dir = app_data_dir.join("logs");
+            fs::create_dir_all(&app_data_dir).ok();
             fs::create_dir_all(&logs_dir).ok();
 
             // ── Single-instance lockfile ──────────────────────────────────

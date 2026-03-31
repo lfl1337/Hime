@@ -148,7 +148,16 @@ pub fn run() {
                     unsafe impl Sync for JobHandle {}
 
                     unsafe {
-                        if let Ok(job) = CreateJobObjectW(None, None) {
+                        // Name the job object so it appears in Process Explorer
+                        // and cannot be confused with job objects from other apps.
+                        let job_name_str =
+                            format!("HimeProcessGroup_{}\0", std::process::id());
+                        let job_name_wide: Vec<u16> =
+                            job_name_str.encode_utf16().collect();
+                        // CreateJobObjectW second param is Option<PCWSTR> in windows-rs 0.61.
+                        let job_pcwstr =
+                            windows::core::PCWSTR(job_name_wide.as_ptr());
+                        if let Ok(job) = CreateJobObjectW(None, Some(job_pcwstr)) {
                             let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
                             info.BasicLimitInformation.LimitFlags =
                                 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;

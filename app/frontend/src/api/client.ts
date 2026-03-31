@@ -5,7 +5,7 @@
 //   Vite dev server, which proxies /api, /health, /ws to the backend.
 //
 // PROD mode (packaged Tauri app):
-//   getPort() reads .runtime_port from %APPDATA%\dev.hime.app\ via
+//   getPort() reads hime-backend.lock from %APPDATA%\dev.lfl.hime\ via
 //   appDataDir() + readTextFile(), matching where run.py writes it.
 
 let cachedPort: number | null = null
@@ -41,23 +41,24 @@ async function getPort(): Promise<number> {
   try {
     const { appDataDir } = await import('@tauri-apps/api/path')
     const dir = await appDataDir()
-    const content = await tryReadFile(`${dir}.runtime_port`)
+    const content = await tryReadFile(`${dir}hime-backend.lock`)
     if (content) {
-      const port = parseInt(content.trim(), 10)
-      if (!isNaN(port)) {
-        console.log(`[client] Port ${port} from appDataDir`)
+      const lock = JSON.parse(content) as { port?: number; pid?: number }
+      const port = lock.port
+      if (typeof port === 'number' && !isNaN(port)) {
+        console.log(`[client] Port ${port} (pid ${lock.pid ?? '?'}) from hime-backend.lock`)
         cachedPort = port
         return port
       }
     }
   } catch (err) {
-    console.debug('[client] appDataDir() unavailable:', err)
+    console.debug('[client] hime-backend.lock unavailable:', err)
   }
 
-  console.warn('[client] Could not read .runtime_port — probing 8000–8010')
+  console.warn('[client] Could not read hime-backend.lock — probing 18420–18430')
 
   // 2. Probe ports sequentially as final fallback
-  for (let port = 8000; port <= 8010; port++) {
+  for (let port = 18420; port <= 18430; port++) {
     if (await probePort(port)) {
       console.log(`[client] Backend found via probe at port ${port}`)
       cachedPort = port
@@ -65,9 +66,9 @@ async function getPort(): Promise<number> {
     }
   }
 
-  console.error('[client] No backend found on 8000–8010 — defaulting to 8004')
-  cachedPort = 8004
-  return 8004
+  console.error('[client] No backend found on 18420–18430 — defaulting to 18420')
+  cachedPort = 18420
+  return 18420
 }
 
 export async function getBaseUrl(): Promise<string> {
@@ -84,7 +85,7 @@ export async function getBaseUrl(): Promise<string> {
     return url
   } catch (err) {
     console.error('[client] getBaseUrl() threw:', err)
-    return 'http://127.0.0.1:8004'
+    return 'http://127.0.0.1:18420'
   }
 }
 

@@ -297,7 +297,8 @@ pub fn run() {
             {
                 use tauri::{WebviewUrl, WebviewWindowBuilder};
                 let webview_data = app_data_dir.join("Hime-WebView2");
-                WebviewWindowBuilder::new(
+
+                let win_builder = WebviewWindowBuilder::new(
                     app.handle(),
                     "main",
                     WebviewUrl::App("index.html".into()),
@@ -306,9 +307,12 @@ pub fn run() {
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(900.0, 600.0)
                 .resizable(true)
-                .data_directory(webview_data)
-                .build()
-                .expect("Failed to create main window");
+                .data_directory(webview_data);
+
+                #[cfg(debug_assertions)]
+                let win_builder = win_builder.devtools(true);
+
+                win_builder.build().expect("Failed to create main window");
             }
 
             Ok(())

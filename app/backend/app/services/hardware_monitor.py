@@ -55,19 +55,16 @@ class HardwareStats(BaseModel):
 # ---------------------------------------------------------------------------
 
 _nvml_ok: bool = False
-_gpu_handle = None
 
 
 def _init_nvml() -> None:
-    global _nvml_ok, _gpu_handle
+    global _nvml_ok
     try:
         import pynvml
         pynvml.nvmlInit()
-        _gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
         _nvml_ok = True
     except Exception:
         _nvml_ok = False
-        _gpu_handle = None
 
 
 _nvml_initialized = False
@@ -78,6 +75,12 @@ def _ensure_nvml() -> None:
     if not _nvml_initialized:
         _init_nvml()
         _nvml_initialized = True
+
+
+def _get_gpu_handle():
+    """Return a fresh device handle each call — avoids stale handles after driver resets."""
+    import pynvml
+    return pynvml.nvmlDeviceGetHandleByIndex(0)
 
 
 # ---------------------------------------------------------------------------
@@ -121,40 +124,48 @@ def get_hardware_stats() -> HardwareStats:
     gpu_clock_mhz = 0
     gpu_max_clock_mhz = 0
 
-    if _nvml_ok and _gpu_handle is not None:
+    if _nvml_ok:
         try:
             import pynvml
-            gpu_name = pynvml.nvmlDeviceGetName(_gpu_handle)
-            if isinstance(gpu_name, bytes):
-                gpu_name = gpu_name.decode("utf-8", errors="replace")
-
-            mem = pynvml.nvmlDeviceGetMemoryInfo(_gpu_handle)
-            gpu_vram_used_mb = mem.used // (1024 * 1024)
-            gpu_vram_total_mb = mem.total // (1024 * 1024)
-            gpu_vram_pct = round(mem.used / mem.total * 100.0, 1) if mem.total > 0 else 0.0
-
-            util = pynvml.nvmlDeviceGetUtilizationRates(_gpu_handle)
-            gpu_utilization_pct = util.gpu
-            gpu_memory_pct = util.memory
-
-            gpu_temp_celsius = pynvml.nvmlDeviceGetTemperature(
-                _gpu_handle, pynvml.NVML_TEMPERATURE_GPU
-            )
+            h = _get_gpu_handle()
 
             try:
-                gpu_power_draw_w = pynvml.nvmlDeviceGetPowerUsage(_gpu_handle) / 1000.0
-                gpu_power_limit_w = pynvml.nvmlDeviceGetPowerManagementLimit(_gpu_handle) / 1000.0
-            except pynvml.NVMLError:
+                gpu_name = pynvml.nvmlDeviceGetName(h)
+                if isinstance(gpu_name, bytes):
+                    gpu_name = gpu_name.decode("utf-8", errors="replace")
+            except Exception:
                 pass
 
             try:
-                gpu_clock_mhz = pynvml.nvmlDeviceGetClockInfo(
-                    _gpu_handle, pynvml.NVML_CLOCK_GRAPHICS
-                )
-                gpu_max_clock_mhz = pynvml.nvmlDeviceGetMaxClockInfo(
-                    _gpu_handle, pynvml.NVML_CLOCK_GRAPHICS
-                )
-            except pynvml.NVMLError:
+                mem = pynvml.nvmlDeviceGetMemoryInfo(h)
+                gpu_vram_used_mb = mem.used // (1024 * 1024)
+                gpu_vram_total_mb = mem.total // (1024 * 1024)
+                gpu_vram_pct = round(mem.used / mem.total * 100.0, 1) if mem.total > 0 else 0.0
+            except Exception:
+                pass
+
+            try:
+                util = pynvml.nvmlDeviceGetUtilizationRates(h)
+                gpu_utilization_pct = util.gpu
+                gpu_memory_pct = util.memory
+            except Exception:
+                pass
+
+            try:
+                gpu_temp_celsius = pynvml.nvmlDeviceGetTemperature(h, pynvml.NVML_TEMPERATURE_GPU)
+            except Exception:
+                pass
+
+            try:
+                gpu_power_draw_w = pynvml.nvmlDeviceGetPowerUsage(h) / 1000.0
+                gpu_power_limit_w = pynvml.nvmlDeviceGetPowerManagementLimit(h) / 1000.0
+            except Exception:
+                pass
+
+            try:
+                gpu_clock_mhz = pynvml.nvmlDeviceGetClockInfo(h, pynvml.NVML_CLOCK_GRAPHICS)
+                gpu_max_clock_mhz = pynvml.nvmlDeviceGetMaxClockInfo(h, pynvml.NVML_CLOCK_GRAPHICS)
+            except Exception:
                 pass
 
         except Exception:

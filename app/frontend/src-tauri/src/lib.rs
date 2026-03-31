@@ -69,27 +69,33 @@ pub fn run() {
                 .resolve("", BaseDirectory::AppData)
                 .expect("Failed to resolve AppData dir");
 
-            // ── One-time data migration: dev.hime.app → dev.lfl.hime ──────
+            // ── One-time data migration: old identifiers → dev.Ninym.hime ──
             // After the identifier rename, app_data_dir now points to
-            // %APPDATA%\dev.lfl.hime. Migrate the old directory if it exists
-            // and the new one does not yet.
+            // %APPDATA%\dev.Ninym.hime. Migrate the most-recent old directory
+            // if it exists and the new one does not yet.
             #[cfg(target_os = "windows")]
             {
-                let old_dir = std::path::PathBuf::from(
-                    std::env::var("APPDATA").unwrap_or_default(),
-                )
-                .join("dev.hime.app");
-                if old_dir.exists() && !app_data_dir.exists() {
-                    match fs::rename(&old_dir, &app_data_dir) {
-                        Ok(()) => {
-                            eprintln!(
-                                "[hime] migrated data dir: dev.hime.app → dev.lfl.hime"
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("[hime] migration failed (non-fatal): {e}");
-                            // App will start fresh in the new location
-                        }
+                let appdata = std::env::var("APPDATA").unwrap_or_default();
+
+                // Step 1: migrate dev.lfl.hime → dev.Ninym.hime (identifier rename)
+                let from_lfl = std::path::PathBuf::from(&appdata).join("dev.lfl.hime");
+                if from_lfl.exists() && !app_data_dir.exists() {
+                    match fs::rename(&from_lfl, &app_data_dir) {
+                        Ok(()) => eprintln!(
+                            "[hime] migrated data dir: dev.lfl.hime → dev.Ninym.hime"
+                        ),
+                        Err(e) => eprintln!("[hime] migration failed (non-fatal): {e}"),
+                    }
+                }
+
+                // Step 2: migrate dev.hime.app → dev.Ninym.hime (original rename, first-run)
+                let from_hime = std::path::PathBuf::from(&appdata).join("dev.hime.app");
+                if from_hime.exists() && !app_data_dir.exists() {
+                    match fs::rename(&from_hime, &app_data_dir) {
+                        Ok(()) => eprintln!(
+                            "[hime] migrated data dir: dev.hime.app → dev.Ninym.hime"
+                        ),
+                        Err(e) => eprintln!("[hime] migration failed (non-fatal): {e}"),
                     }
                 }
             }

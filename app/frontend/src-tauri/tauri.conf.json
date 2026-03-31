@@ -1,7 +1,7 @@
 {
   "productName": "Hime",
   "version": "1.1.1",
-  "identifier": "dev.lfl.hime",
+  "identifier": "dev.Ninym.hime",
   "build": {
     "beforeDevCommand": "npm run vite",
     "devUrl": "http://localhost:1420",

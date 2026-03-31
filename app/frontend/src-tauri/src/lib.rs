@@ -58,6 +58,31 @@ pub fn run() {
                 .resolve("", BaseDirectory::AppData)
                 .expect("Failed to resolve AppData dir");
 
+            // ── One-time data migration: dev.hime.app → dev.lfl.hime ──────
+            // After the identifier rename, app_data_dir now points to
+            // %APPDATA%\dev.lfl.hime. Migrate the old directory if it exists
+            // and the new one does not yet.
+            #[cfg(target_os = "windows")]
+            {
+                let old_dir = std::path::PathBuf::from(
+                    std::env::var("APPDATA").unwrap_or_default(),
+                )
+                .join("dev.hime.app");
+                if old_dir.exists() && !app_data_dir.exists() {
+                    match fs::rename(&old_dir, &app_data_dir) {
+                        Ok(()) => {
+                            eprintln!(
+                                "[hime] migrated data dir: dev.hime.app → dev.lfl.hime"
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("[hime] migration failed (non-fatal): {e}");
+                            // App will start fresh in the new location
+                        }
+                    }
+                }
+            }
+
             let logs_dir = app_data_dir.join("logs");
             fs::create_dir_all(&app_data_dir).ok();
             fs::create_dir_all(&logs_dir).ok();
@@ -267,6 +292,24 @@ pub fn run() {
                     }
                 }
             });
+
+            // ── Create main window with isolated WebView2 data directory ──
+            {
+                use tauri::{WebviewUrl, WebviewWindowBuilder};
+                let webview_data = app_data_dir.join("Hime-WebView2");
+                WebviewWindowBuilder::new(
+                    app.handle(),
+                    "main",
+                    WebviewUrl::App("index.html".into()),
+                )
+                .title("Hime")
+                .inner_size(1280.0, 800.0)
+                .min_inner_size(900.0, 600.0)
+                .resizable(true)
+                .data_directory(webview_data)
+                .build()
+                .expect("Failed to create main window");
+            }
 
             Ok(())
         })

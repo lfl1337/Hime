@@ -19,7 +19,7 @@ else:
 
 
 class Settings(BaseSettings):
-    port: int = 8000  # preferred port; run.py will scan upward if it's busy
+    port: int = 18420  # Hime-specific range (18420-18519) — avoids collision with other local apps
     # Legacy single-model inference (kept for /ws/translate backward compat)
     inference_url: str = "http://127.0.0.1:8080/v1"
     inference_model: str = "qwen2.5-14b-instruct"

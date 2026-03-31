@@ -134,7 +134,7 @@ export function Sidebar() {
           <div className="flex flex-col gap-1">
             <span className="text-xs text-zinc-600">Backend</span>
             <StatusBadge online={backendOnline} />
-            <p className="mt-1 text-xs text-zinc-600">Hime v1.1.1</p>
+            <p className="mt-1 text-xs text-zinc-600">Hime v1.1.2</p>
           </div>
         )}
       </div>

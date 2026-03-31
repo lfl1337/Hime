@@ -7,22 +7,23 @@ import { fileURLToPath } from 'node:url'
 // ESM-safe equivalent of __dirname (not available in "type": "module" projects)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// Read the backend port from .runtime_port at Vite startup.
+// Read the backend port from hime-backend.lock at Vite startup.
 // Node.js can read the file directly — no Tauri plugin or CORS involved.
+// The lock file is JSON: {"port": N, "pid": N} (written by run.py on startup).
 function readBackendPort(): number {
-  const filePath = path.resolve(__dirname, '../backend/.runtime_port')
+  const filePath = path.resolve(__dirname, '../backend/hime-backend.lock')
   try {
     const content = readFileSync(filePath, 'utf8')
-    const port = parseInt(content.trim(), 10)
-    if (!isNaN(port)) {
-      console.log(`[vite] Backend port: ${port} (from ${filePath})`)
-      return port
+    const lock = JSON.parse(content) as { port?: number; pid?: number }
+    if (typeof lock.port === 'number' && !isNaN(lock.port)) {
+      console.log(`[vite] Backend port: ${lock.port} (pid ${lock.pid ?? '?'}) from ${filePath}`)
+      return lock.port
     }
-    console.error(`[vite] .runtime_port is not a number: "${content.trim()}"`)
+    console.error(`[vite] hime-backend.lock has no valid port field: ${content.trim()}`)
   } catch {
-    console.warn(`[vite] .runtime_port not found at ${path.resolve(__dirname, '../backend/.runtime_port')} — defaulting to 8004`)
+    console.warn(`[vite] hime-backend.lock not found at ${filePath} — defaulting to 18420`)
   }
-  return 8004
+  return 18420
 }
 
 // Keep BACKEND_PORT as the initial fallback only
@@ -35,7 +36,7 @@ export default defineConfig({
   server: {
     port: 1420,
     host: '127.0.0.1',
-    strictPort: false,
+    strictPort: true,
     proxy: {
       // router() is called per-request — re-reads .runtime_port each time so
       // the proxy stays correct even if the backend starts after Vite or restarts.

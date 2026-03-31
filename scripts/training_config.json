@@ -1,11 +1,11 @@
 {
-  "stop_mode": "none",
-  "target_loss": null,
+  "stop_mode": "both",
+  "target_loss": 0.4,
   "target_loss_metric": "loss",
   "target_confirmations": 3,
-  "patience": null,
+  "patience": 5,
   "patience_metric": "eval_loss",
   "min_delta": 0.001,
-  "min_steps": 0,
-  "max_epochs": 3
+  "min_steps": 1000,
+  "max_epochs": 10
 }

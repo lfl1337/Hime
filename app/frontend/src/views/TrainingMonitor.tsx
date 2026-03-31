@@ -728,6 +728,18 @@ export function TrainingMonitor() {
     'HW polling',
   )
 
+  // Checkpoint polling every 60s — keeps the list fresh during an active training run
+  useInterval(
+    () => {
+      const currentRun = selectedRunRef.current
+      if (currentRun === null) return
+      getCheckpoints(currentRun).then(cps => setCheckpoints(cps)).catch(() => {})
+    },
+    60_000,
+    isWindowVisible && selectedRun !== null,
+    'Checkpoint polling',
+  )
+
   // Memory pressure detection — trim state arrays if JS heap > 500MB
   useEffect(() => {
     const check = setInterval(() => {
@@ -1390,6 +1402,9 @@ export function TrainingMonitor() {
               ))}
             </div>
           )}
+          <p className="mt-3 text-xs text-zinc-600">
+            Hinweis: Aktuelles Training speichert max. 3 Checkpoints (Änderung greift beim nächsten Start)
+          </p>
         </div>
 
         {/* 4.5. Pipeline Models (GGUF) */}

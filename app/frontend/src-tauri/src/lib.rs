@@ -154,11 +154,11 @@ pub fn run() {
             let app_handle = app.handle().clone();
 
             #[cfg(not(debug_assertions))]
-            let runtime_port_path = app_data_dir.join(".runtime_port");
+            let runtime_port_path = app_data_dir.join("hime-backend.lock");
 
             #[cfg(debug_assertions)]
             let runtime_port_path = std::path::PathBuf::from(
-                r"C:\Projekte\Hime\app\backend\.runtime_port",
+                r"C:\Projekte\Hime\app\backend\hime-backend.lock",
             );
 
             let log_path_for_check = log_path_str.clone();

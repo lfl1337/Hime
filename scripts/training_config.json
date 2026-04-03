@@ -7,5 +7,5 @@
   "patience_metric": "eval_loss",
   "min_delta": 0.001,
   "min_steps": 1000,
-  "max_epochs": 10
+  "max_epochs": 3
 }

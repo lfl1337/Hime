@@ -145,7 +145,7 @@ def load_model():
         trust_remote_code = True,
         device_map      = "cuda:0",              # Load shards directly to GPU, skip CPU staging
         low_cpu_mem_usage = True,                # Load one shard at a time — avoids mapping all to RAM
-        max_memory      = {0: "30GB", "cpu": "20GB"},  # Cap CPU RAM to prevent pagefile exhaustion
+        max_memory      = {0: "28GB", "cpu": "16GB"},  # 28GB GPU = 4GB CUDA headroom, 16GB CPU = less pagefile pressure
     )
     _load_time = _time.time() - _load_start
 
@@ -275,7 +275,12 @@ class SaveCheckpointCallback(TrainerCallback):
 
     def on_save(self, args, state, control, **kwargs):
         checkpoint = state.best_model_checkpoint or f"step-{state.global_step}"
-        print(f"[CHECKPOINT] Gespeichert: {checkpoint}")
+        if torch.cuda.is_available():
+            alloc = torch.cuda.memory_allocated() / 1024**3
+            reserved = torch.cuda.memory_reserved() / 1024**3
+            print(f"[CHECKPOINT] Gespeichert: {checkpoint} (VRAM: {alloc:.1f}GB alloc / {reserved:.1f}GB reserved)")
+        else:
+            print(f"[CHECKPOINT] Gespeichert: {checkpoint}")
         return control
 
     def on_train_begin(self, args, state, control, **kwargs):
@@ -317,6 +322,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None, stop_
         bf16                          = True,
         logging_steps                 = LOGGING_STEPS,
         save_steps                    = SAVE_STEPS,
+        save_strategy                 = "steps",
         eval_steps                    = EVAL_STEPS,
         eval_strategy                 = "steps",
         save_total_limit              = None,

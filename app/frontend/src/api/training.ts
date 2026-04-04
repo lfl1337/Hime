@@ -166,6 +166,17 @@ export async function stopTraining(modelName: string): Promise<{ stopped: boolea
   return res.json() as Promise<{ stopped: boolean; graceful: boolean }>
 }
 
+export async function saveTrainingCheckpoint(runName: string): Promise<{ status: string; run: string }> {
+  const res = await apiFetch(`/api/v1/training/save-checkpoint?run=${encodeURIComponent(runName)}`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText })) as { detail: string }
+    throw new Error(err.detail || res.statusText)
+  }
+  return res.json() as Promise<{ status: string; run: string }>
+}
+
 export async function getRunningProcesses(): Promise<TrainingProcess[]> {
   const res = await apiFetch('/api/v1/training/processes')
   if (!res.ok) throw new Error(`training/processes failed: ${res.statusText}`)

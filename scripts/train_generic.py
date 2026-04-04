@@ -156,7 +156,7 @@ def load_model(model_name: str, max_seq_len: int):
         trust_remote_code=True,
         device_map="cuda:0",              # Load shards directly to GPU, skip CPU staging
         low_cpu_mem_usage=True,           # Load one shard at a time — avoids mapping all to RAM
-        max_memory={0: "28GB", "cpu": "16GB"},  # 28GB GPU = 4GB CUDA headroom, 16GB CPU = less pagefile pressure
+        max_memory={0: "30GB", "cpu": "20GB"},
     )
     print(f"[INFO] Model loaded ({_time.time() - _load_start:.1f}s)")
     return model, tokenizer
@@ -167,18 +167,29 @@ def get_target_modules(model_name: str) -> list:
     return ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
 
-def apply_lora(model, tokenizer, output_dir: Path, resume_path: str | None):
-    """Add LoRA adapter, auto-detecting existing checkpoints if no explicit resume path."""
+def apply_lora(model, tokenizer, output_dir: Path, resume_path: str | None,
+               warm_start: bool = False):
+    """Add LoRA adapter, auto-detecting existing checkpoints if no explicit resume path.
+
+    warm_start: Load adapter weights from checkpoint but don't pass resume_from
+                to trainer (fresh optimizer). Avoids VRAM fragmentation that causes
+                catastrophic slowdown on 32GB GPUs.
+    """
     print(f"\n[..] Adding LoRA adapter (Rank={LORA_RANK})")
 
     # Auto-detect latest checkpoint if not explicitly provided
+    target_cp = None
     if resume_path is None:
         cp_dir = output_dir / "checkpoint"
         if cp_dir.exists():
             checkpoints = sorted(cp_dir.glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[-1]) if p.name.split("-")[-1].isdigit() else 0)
             if checkpoints:
-                resume_path = str(checkpoints[-1])
-                print(f"[i]  Auto-detected checkpoint: {checkpoints[-1].name}")
+                target_cp = checkpoints[-1]
+                if not warm_start:
+                    resume_path = str(target_cp)
+                print(f"[i]  Auto-detected checkpoint: {target_cp.name}")
+    else:
+        target_cp = Path(resume_path)
 
     model = FastLanguageModel.get_peft_model(
         model,
@@ -191,10 +202,27 @@ def apply_lora(model, tokenizer, output_dir: Path, resume_path: str | None):
         random_state=42,
     )
 
-    if resume_path is None:
-        total_params     = sum(p.numel() for p in model.parameters())
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(f"[OK] Trainable parameters: {trainable_params:,} ({trainable_params/total_params*100:.2f}%)")
+    total_params     = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"[OK] Trainable parameters: {trainable_params:,} ({trainable_params/total_params*100:.2f}%)")
+
+    if warm_start and target_cp is not None:
+        adapter_file = Path(target_cp) / "adapter_model.safetensors"
+        if adapter_file.exists():
+            from safetensors.torch import load_file
+            print(f"[i]  Warm-start: loading adapter weights from {target_cp.name} (no optimizer)")
+            adapter_weights = load_file(str(adapter_file))
+            # PEFT state_dict uses '.default.' in key names (adapter name),
+            # but saved adapter files omit it. Remap keys to match model.
+            remapped = {}
+            for k, v in adapter_weights.items():
+                new_key = k.replace(".lora_A.weight", ".lora_A.default.weight") \
+                           .replace(".lora_B.weight", ".lora_B.default.weight")
+                remapped[new_key] = v
+            incompatible = model.load_state_dict(remapped, strict=False)
+            loaded_count = len(remapped) - len(incompatible.unexpected_keys)
+            print(f"[OK] Adapter weights loaded ({loaded_count} tensors). Optimizer will be fresh.")
+            return model, tokenizer, None
 
     return model, tokenizer, resume_path
 
@@ -321,7 +349,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, output_dir: Path,
         save_strategy="steps",
         eval_steps=EVAL_STEPS,
         eval_strategy="steps",
-        save_total_limit=3,
+        save_total_limit=None,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         report_to="none",
@@ -402,6 +430,10 @@ def main():
     parser.add_argument("--min-delta",   type=float, default=None, help="Min improvement for patience mode")
     parser.add_argument("--min-steps",   type=int,   default=None, help="Don't stop before this step")
     parser.add_argument("--max-epochs",  type=int,   default=None, help="Max training epochs")
+    parser.add_argument("--full-resume", action="store_true",
+                        help="Full resume incl. optimizer state (may cause VRAM thrashing on 32GB GPUs)")
+    parser.add_argument("--fresh",       action="store_true",
+                        help="Ignore checkpoints, train from scratch")
 
     # parse_known_args to ignore HuggingFace Trainer args passed from training_runner
     args, _ = parser.parse_known_args()
@@ -461,7 +493,13 @@ def main():
     print(f"[INFO] epochs: {epochs}")
     train_dataset, eval_dataset = load_training_data(data_file)
     model, tokenizer = load_model(model_hf_name, max_seq)
-    model, tokenizer, resume_from = apply_lora(model, tokenizer, output_dir, args.resume)
+    _warm_start = not args.full_resume and not args.fresh
+    if _warm_start:
+        print(f"[INFO] Mode: warm-start (adapter weights from checkpoint, fresh optimizer)")
+    elif args.full_resume:
+        print(f"[INFO] Mode: full-resume (incl. optimizer + scheduler from checkpoint)")
+    model, tokenizer, resume_from = apply_lora(model, tokenizer, output_dir, args.resume,
+                                                warm_start=_warm_start)
     trainer = train(model, tokenizer, train_dataset, eval_dataset, output_dir,
                     epochs, max_seq, grad_accum, resume_from, stop_config=stop_config)
 

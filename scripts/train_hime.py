@@ -41,15 +41,15 @@ MODEL_NAME = "unsloth/Qwen2.5-32B-Instruct-bnb-4bit"
 # LoRA Parameter
 LORA_RANK       = 16    # Reduziert von 32 → weniger VRAM
 LORA_ALPHA      = 32    # Meist 2x LORA_RANK
-LORA_DROPOUT    = 0.0   # 0 = Unsloth Fast Path aktiv!
+LORA_DROPOUT    = 0.05  # Regularisierung gegen Overfitting (deaktiviert Unsloth Fast Path)
 
 # Training Parameter
-LEARNING_RATE   = 2e-4
+LEARNING_RATE   = 5e-5  # Gesenkt von 2e-4 — Feinschliff nach Loss-Plateau
 EPOCHS          = 3
 BATCH_SIZE      = 1     # Reduziert von 2 → weniger VRAM
-GRAD_ACCUM      = 16    # Erhöht → gleiche effektive Batch Size = 16
+GRAD_ACCUM      = 8     # Halbiert von 16 → schnellere Steps, rauschigere Gradienten
 MAX_SEQ_LEN     = 1024  # Reduziert von 2048 → weniger VRAM
-WARMUP_RATIO    = 0.05
+WARMUP_STEPS    = 50    # Fixe 50 Steps statt 5% Ratio — reicht für frischen Optimizer
 WEIGHT_DECAY    = 0.01
 
 # Checkpoint alle N Schritte speichern (tagsüber stoppen!)
@@ -371,7 +371,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None, stop_
         per_device_eval_batch_size    = 1,            # Minimal eval VRAM usage
         gradient_accumulation_steps   = GRAD_ACCUM,
         learning_rate                 = LEARNING_RATE,
-        warmup_ratio                  = WARMUP_RATIO,
+        warmup_steps                  = WARMUP_STEPS,
         weight_decay                  = WEIGHT_DECAY,
         lr_scheduler_type             = "cosine",
         optim                         = "adamw_8bit", # 8-bit optimizer → weniger RAM

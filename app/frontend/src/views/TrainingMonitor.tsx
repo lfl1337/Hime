@@ -23,6 +23,7 @@ import {
   getStopConfig,
   getTrainingLog,
   getTrainingStatus,
+  saveTrainingCheckpoint,
   startTraining,
   stopTraining,
   updateStopConfig,
@@ -504,6 +505,8 @@ export function TrainingMonitor() {
   const [confirmAction, setConfirmAction] = useState<'start' | 'stop' | null>(null)
   const [controlLoading, setControlLoading] = useState(false)
   const [stopPollStart, setStopPollStart] = useState<number | null>(null)
+  const [savingCheckpoint, setSavingCheckpoint] = useState(false)
+  const [saveCheckpointFeedback, setSaveCheckpointFeedback] = useState<'success' | 'error' | null>(null)
   const stopPollRef = useRef<number | null>(null)
 
   // "Pause live updates" — persisted across sessions; stops SSE + HW polling
@@ -872,6 +875,22 @@ export function TrainingMonitor() {
     }, 2000)
   }
 
+  async function handleSaveCheckpoint() {
+    if (!selectedRun) return
+    setSavingCheckpoint(true)
+    setSaveCheckpointFeedback(null)
+    try {
+      await saveTrainingCheckpoint(selectedRun)
+      setSaveCheckpointFeedback('success')
+      window.setTimeout(() => setSaveCheckpointFeedback(null), 3000)
+    } catch {
+      setSaveCheckpointFeedback('error')
+      window.setTimeout(() => setSaveCheckpointFeedback(null), 4000)
+    } finally {
+      setSavingCheckpoint(false)
+    }
+  }
+
   // Loading / error / empty screen
   if (!runsLoaded || runs.length === 0) {
     return (
@@ -1125,12 +1144,28 @@ export function TrainingMonitor() {
                 <div>PID: <span className="font-mono text-zinc-400">{runningProcess.pid}</span></div>
                 <div>Started {relativeTime(runningProcess.started_at)}</div>
               </div>
-              <button
-                onClick={() => setConfirmAction('stop')}
-                className="px-4 py-2 rounded-lg text-sm bg-red-800 hover:bg-red-700 text-white transition-colors"
-              >
-                Stop Training
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setConfirmAction('stop')}
+                  className="px-4 py-2 rounded-lg text-sm bg-red-800 hover:bg-red-700 text-white transition-colors"
+                >
+                  Stop Training
+                </button>
+                <button
+                  onClick={() => void handleSaveCheckpoint()}
+                  disabled={savingCheckpoint}
+                  className="px-4 py-2 rounded-lg text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-200 transition-colors disabled:opacity-50"
+                  title="Force an immediate checkpoint save"
+                >
+                  {savingCheckpoint ? 'Saving…' : '💾 Save Checkpoint'}
+                </button>
+                {saveCheckpointFeedback === 'success' && (
+                  <span className="text-green-400 text-xs">Signal sent — checkpoint will save at next step</span>
+                )}
+                {saveCheckpointFeedback === 'error' && (
+                  <span className="text-red-400 text-xs">Failed to send save signal</span>
+                )}
+              </div>
             </div>
           ) : (
             /* Idle/Interrupted/Complete state */

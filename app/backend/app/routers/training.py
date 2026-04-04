@@ -166,6 +166,22 @@ async def api_stop_training(body: StopTrainingRequest) -> StopResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
+@router.post("/save-checkpoint")
+async def save_checkpoint(
+    run: str = Query(..., pattern=_RUN_PATTERN, max_length=128),
+) -> dict:
+    """Create a SAVE_NOW signal file to trigger immediate checkpoint save."""
+    checkpoint_dir = Path(settings.models_base_path) / "lora" / run / "checkpoint"
+    if not checkpoint_dir.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Checkpoint directory not found for run: {run}",
+        )
+    signal_file = checkpoint_dir / "SAVE_NOW"
+    signal_file.touch()
+    return {"status": "signal_sent", "run": run}
+
+
 @router.get("/processes", response_model=list[TrainingProcess])
 async def api_get_processes() -> list[TrainingProcess]:
     """List all currently running training processes (auto-cleans dead PIDs)."""

@@ -27,6 +27,7 @@ from trl import SFTTrainer
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).parent))
 from callbacks.smart_stopping import SmartStoppingCallback
+from callbacks.manual_save import ManualSaveCallback
 
 # ═══════════════════════════════════════════════════════════════
 #  HIER ANPASSEN - Einfach ändern und neu starten
@@ -306,7 +307,7 @@ def _load_stop_config(cli_args) -> dict:
 
 def _build_callbacks(stop_config: dict | None) -> list:
     """Build the callbacks list, optionally including SmartStoppingCallback."""
-    cbs = [SaveCheckpointCallback()]
+    cbs = [SaveCheckpointCallback(), ManualSaveCallback()]
     if stop_config is None:
         return cbs
     mode = stop_config.get("stop_mode", "none")

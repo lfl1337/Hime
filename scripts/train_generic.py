@@ -45,7 +45,7 @@ MODEL_CONFIGS = {
         'model':    'unsloth/Qwen2.5-32B-Instruct-bnb-4bit',
         'lora_dir': 'Qwen2.5-32B-Instruct',
         'max_seq':  1024,
-        'grad_accum': 16,
+        'grad_accum': 8,
     },
     'qwen14b': {
         'model':    'unsloth/Qwen2.5-14B-Instruct-bnb-4bit',
@@ -76,15 +76,15 @@ MODEL_CONFIGS = {
 # LoRA defaults
 LORA_RANK    = 16
 LORA_ALPHA   = 32
-LORA_DROPOUT = 0.0
+LORA_DROPOUT  = 0.05   # Regularisierung gegen Overfitting
 
 # Training defaults
-LEARNING_RATE = 2e-4
+LEARNING_RATE = 5e-5   # Gesenkt von 2e-4 — Feinschliff nach Loss-Plateau
 BATCH_SIZE    = 1
 SAVE_STEPS    = 100
 EVAL_STEPS    = 100
 LOGGING_STEPS = 10
-WARMUP_RATIO  = 0.05
+WARMUP_STEPS  = 50     # Fixe 50 Steps statt 5% Ratio
 WEIGHT_DECAY  = 0.01
 
 PROJECT_ROOT = Path(r"C:\Projekte\Hime")
@@ -338,7 +338,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, output_dir: Path,
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=grad_accum,
         learning_rate=LEARNING_RATE,
-        warmup_ratio=WARMUP_RATIO,
+        warmup_steps=WARMUP_STEPS,
         weight_decay=WEIGHT_DECAY,
         lr_scheduler_type="cosine",
         optim="adamw_8bit",

@@ -82,7 +82,7 @@ LORA_DROPOUT  = 0.05   # Regularisierung gegen Overfitting
 # Training defaults
 LEARNING_RATE = 5e-5   # Gesenkt von 2e-4 — Feinschliff nach Loss-Plateau
 BATCH_SIZE    = 1
-SAVE_STEPS    = 50
+SAVE_STEPS    = 20
 EVAL_STEPS    = 500
 LOGGING_STEPS = 10
 WARMUP_STEPS  = 50     # Fixe 50 Steps statt 5% Ratio
@@ -352,7 +352,8 @@ def train(model, tokenizer, train_dataset, eval_dataset, output_dir: Path,
         eval_steps=EVAL_STEPS,
         eval_strategy="steps",
         save_total_limit=None,
-        load_best_model_at_end=False,  # Decouples save/eval schedules (saves every 50, eval every 500)
+        load_best_model_at_end=False,  # Decouples save/eval schedules (saves every 20, eval every 500)
+        max_grad_norm=0.5,             # Grad-clipping: Norms lagen bei 0.7–1.4, 0.5 für stabilere Schritte
         report_to="none",
         seed=42,
         dataloader_num_workers=0,
@@ -472,7 +473,7 @@ def main():
         stop_config["max_epochs"] = epochs
 
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.6"
 
     print("=" * 60)
     print(f"  Hime - Generic Training Script")

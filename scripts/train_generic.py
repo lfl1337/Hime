@@ -82,8 +82,8 @@ LORA_DROPOUT  = 0.05   # Regularisierung gegen Overfitting
 # Training defaults
 LEARNING_RATE = 5e-5   # Gesenkt von 2e-4 — Feinschliff nach Loss-Plateau
 BATCH_SIZE    = 1
-SAVE_STEPS    = 100
-EVAL_STEPS    = 100
+SAVE_STEPS    = 50
+EVAL_STEPS    = 500
 LOGGING_STEPS = 10
 WARMUP_STEPS  = 50     # Fixe 50 Steps statt 5% Ratio
 WEIGHT_DECAY  = 0.01
@@ -296,13 +296,14 @@ class SaveCheckpointCallback(TrainerCallback):
     """Structured log lines for checkpoint saves and training lifecycle events."""
 
     def on_save(self, args, state, control, **kwargs):
-        checkpoint = state.best_model_checkpoint or f"step-{state.global_step}"
+        saved = f"checkpoint-{state.global_step}"
+        best = f" | best={state.best_metric:.4f} @ {os.path.basename(state.best_model_checkpoint or '')}" if state.best_model_checkpoint else ""
         if torch.cuda.is_available():
             alloc = torch.cuda.memory_allocated() / 1024**3
             reserved = torch.cuda.memory_reserved() / 1024**3
-            print(f"[CHECKPOINT] Saved: {checkpoint} (VRAM: {alloc:.1f}GB alloc / {reserved:.1f}GB reserved)")
+            print(f"[CHECKPOINT] Saved: {saved}{best} (VRAM: {alloc:.1f}GB alloc / {reserved:.1f}GB reserved)")
         else:
-            print(f"[CHECKPOINT] Saved: {checkpoint}")
+            print(f"[CHECKPOINT] Saved: {saved}{best}")
         return control
 
     def on_train_begin(self, args, state, control, **kwargs):

@@ -54,8 +54,8 @@ WARMUP_STEPS    = 50    # Fixe 50 Steps statt 5% Ratio — reicht für frischen 
 WEIGHT_DECAY    = 0.01
 
 # Checkpoint alle N Schritte speichern (tagsüber stoppen!)
-SAVE_STEPS      = 100
-EVAL_STEPS      = 100
+SAVE_STEPS      = 50
+EVAL_STEPS      = 500
 LOGGING_STEPS   = 10
 
 # ═══════════════════════════════════════════════════════════════
@@ -301,6 +301,8 @@ def _load_stop_config(cli_args) -> dict:
         defaults["min_steps"] = cli_args.min_steps
     if getattr(cli_args, "max_epochs", None) is not None:
         defaults["max_epochs"] = cli_args.max_epochs
+    if getattr(cli_args, "max_steps", None) is not None:
+        defaults["max_steps"] = cli_args.max_steps
 
     return defaults
 
@@ -332,13 +334,14 @@ class SaveCheckpointCallback(TrainerCallback):
     """Structured log lines for checkpoint saves, epoch ends, and training lifecycle."""
 
     def on_save(self, args, state, control, **kwargs):
-        checkpoint = state.best_model_checkpoint or f"step-{state.global_step}"
+        saved = f"checkpoint-{state.global_step}"
+        best = f" | best={state.best_metric:.4f} @ {os.path.basename(state.best_model_checkpoint or '')}" if state.best_model_checkpoint else ""
         if torch.cuda.is_available():
             alloc = torch.cuda.memory_allocated() / 1024**3
             reserved = torch.cuda.memory_reserved() / 1024**3
-            print(f"[CHECKPOINT] Gespeichert: {checkpoint} (VRAM: {alloc:.1f}GB alloc / {reserved:.1f}GB reserved)")
+            print(f"[CHECKPOINT] Gespeichert: {saved}{best} (VRAM: {alloc:.1f}GB alloc / {reserved:.1f}GB reserved)")
         else:
-            print(f"[CHECKPOINT] Gespeichert: {checkpoint}")
+            print(f"[CHECKPOINT] Gespeichert: {saved}{best}")
         return control
 
     def on_train_begin(self, args, state, control, **kwargs):
@@ -367,6 +370,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None, stop_
 
     training_args = TrainingArguments(
         output_dir                    = str(OUTPUT_DIR / "checkpoint"),
+        max_steps                     = stop_config["max_steps"] if (stop_config and stop_config.get("max_steps")) else -1,
         num_train_epochs              = stop_config["max_epochs"] if stop_config else EPOCHS,
         per_device_train_batch_size   = BATCH_SIZE,
         per_device_eval_batch_size    = 1,            # Minimal eval VRAM usage
@@ -555,6 +559,7 @@ if __name__ == "__main__":
     _parser.add_argument("--patience",     type=int,   default=None, help="Evals without improvement before stopping")
     _parser.add_argument("--min-delta",    type=float, default=None, help="Min improvement for patience mode")
     _parser.add_argument("--min-steps",    type=int,   default=None, help="Don't stop before this step")
+    _parser.add_argument("--max-steps",    type=int,   default=None, help="Stop after this many total steps (overrides epochs)")
     _parser.add_argument("--max-epochs",   type=int,   default=None, help="Max training epochs")
     _parser.add_argument("--full-resume",  action="store_true",
                          help="Full resume incl. optimizer state (may cause VRAM thrashing on 32GB GPUs)")

@@ -54,7 +54,7 @@ WARMUP_STEPS    = 50    # Fixe 50 Steps statt 5% Ratio — reicht für frischen 
 WEIGHT_DECAY    = 0.01
 
 # Checkpoint alle N Schritte speichern (tagsüber stoppen!)
-SAVE_STEPS      = 50
+SAVE_STEPS      = 20
 EVAL_STEPS      = 500
 LOGGING_STEPS   = 10
 
@@ -388,7 +388,8 @@ def train(model, tokenizer, train_dataset, eval_dataset, resume_from=None, stop_
         eval_steps                    = EVAL_STEPS,
         eval_strategy                 = "steps",
         save_total_limit              = None,
-        load_best_model_at_end        = False,  # Decouples save/eval schedules (saves every 50, eval every 500)
+        load_best_model_at_end        = False,  # Decouples save/eval schedules (saves every 20, eval every 500)
+        max_grad_norm                 = 0.5,    # Grad-clipping: Norms lagen bei 0.7–1.4, 0.5 für stabilere Schritte
         report_to                     = "none",        # Kein WandB
         seed                          = 42,
         dataloader_num_workers        = 0,             # Windows Kompatibilität
@@ -465,7 +466,7 @@ def main(resume_from_checkpoint=None, stop_config=None, warm_start=True, from_be
 
     # Memory / parallelism settings — must be set before any CUDA allocation
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.6"
 
     print("=" * 60)
     print(f"  Hime - Training Script")

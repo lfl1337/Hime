@@ -321,7 +321,7 @@ class SaveCheckpointCallback(TrainerCallback):
 
 def train(model, tokenizer, train_dataset, eval_dataset, output_dir: Path,
           epochs: int, max_seq_len: int, grad_accum: int, resume_from: str | None,
-          stop_config: dict | None = None):
+          stop_config: dict | None = None, max_steps: int | None = None):
     """Run training."""
     import time as _time
     adapter_name = output_dir.name
@@ -335,6 +335,7 @@ def train(model, tokenizer, train_dataset, eval_dataset, output_dir: Path,
 
     training_args = TrainingArguments(
         output_dir=str(output_dir / "checkpoint"),
+        max_steps=max_steps if max_steps is not None else -1,
         num_train_epochs=stop_config["max_epochs"] if (stop_config and stop_config.get("max_epochs") is not None) else epochs,
         per_device_train_batch_size=BATCH_SIZE,
         per_device_eval_batch_size=1,
@@ -432,6 +433,7 @@ def main():
     parser.add_argument("--min-delta",   type=float, default=None, help="Min improvement for patience mode")
     parser.add_argument("--min-steps",   type=int,   default=None, help="Don't stop before this step")
     parser.add_argument("--max-epochs",  type=int,   default=None, help="Max training epochs")
+    parser.add_argument("--max-steps",   type=int,   default=None, help="Stop after this many steps (for auto-restart cycle)")
     parser.add_argument("--full-resume", action="store_true",
                         help="Full resume incl. optimizer state (may cause VRAM thrashing on 32GB GPUs)")
     parser.add_argument("--fresh",       action="store_true",
@@ -503,7 +505,8 @@ def main():
     model, tokenizer, resume_from = apply_lora(model, tokenizer, output_dir, args.resume,
                                                 warm_start=_warm_start)
     trainer = train(model, tokenizer, train_dataset, eval_dataset, output_dir,
-                    epochs, max_seq, grad_accum, resume_from, stop_config=stop_config)
+                    epochs, max_seq, grad_accum, resume_from, stop_config=stop_config,
+                    max_steps=getattr(args, 'max_steps', None))
 
     if trainer is not None:
         save_adapter(model, tokenizer, output_dir)

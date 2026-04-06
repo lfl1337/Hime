@@ -34,19 +34,30 @@ MODEL_LORA_DIR = {
 TRAIN_SCRIPT = PROJECT_ROOT / "scripts" / "train_generic.py"
 
 
+def checkpoint_step(cp: Path) -> int:
+    """Parse step number from directory name."""
+    return int(cp.name.split("-")[1])
+
+
 def latest_checkpoint(checkpoint_dir: Path) -> Path | None:
-    """Return the checkpoint with the highest step number."""
+    """Return the most recently written checkpoint.
+
+    Uses mtime of trainer_state.json inside each checkpoint — this file is
+    written explicitly by the Trainer and has a reliable mtime on Windows,
+    unlike the parent directory whose mtime may not update.
+    """
     checkpoints = [
         d for d in checkpoint_dir.iterdir()
-        if d.is_dir() and re.fullmatch(r"checkpoint-\d+", d.name)
+        if d.is_dir() and re.fullmatch(r"checkpoint-\\d+", d.name)
     ]
     if not checkpoints:
         return None
-    return max(checkpoints, key=lambda d: int(d.name.split("-")[1]))
 
+    def _mtime(cp: Path) -> float:
+        ts = cp / "trainer_state.json"
+        return ts.stat().st_mtime if ts.exists() else cp.stat().st_mtime
 
-def checkpoint_step(cp: Path) -> int:
-    return int(cp.name.split("-")[1])
+    return max(checkpoints, key=_mtime)
 
 
 def run_cycle(model: str, run_name: str, resume: str | None, cycle_steps: int,

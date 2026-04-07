@@ -279,9 +279,15 @@ export function TranslationWorkspace({ book, chapter }: Props) {
               <p className="text-sm text-red-400">{pipeline.error}</p>
             )}
 
-            {/* Not translated, not running */}
+            {/* Not translated, not running — show translate hint */}
             {!currentParagraph?.is_translated && !isRunning && !pipeline.finalOutput && activeJobId === null && (
-              <p className="text-zinc-600 text-sm">Click Translate to start</p>
+              <div className="space-y-2">
+                <p className="text-zinc-500 text-sm">Click Translate to start the pipeline</p>
+                <p className="text-zinc-700 text-xs">
+                  The translation pipeline sends your text through 3 models in parallel,
+                  merges the results, and then refines the output in two passes.
+                </p>
+              </div>
             )}
           </div>
 

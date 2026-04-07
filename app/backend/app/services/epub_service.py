@@ -19,6 +19,38 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 _log = logging.getLogger(__name__)
 
 
+def _validate_epub_path(file_path: str, allowed_root: str | None) -> Path:
+    """
+    Resolve and validate an EPUB file path.
+
+    Raises ValueError if:
+    - Path contains null bytes
+    - Path doesn't end in .epub
+    - Path is outside allowed_root (if provided)
+    - Path is a symlink pointing outside allowed_root
+    """
+    if "\x00" in file_path:
+        raise ValueError("Invalid file path: contains null bytes")
+
+    resolved = Path(file_path).resolve()
+
+    if resolved.suffix.lower() != ".epub":
+        raise ValueError("Only .epub files are allowed")
+
+    if allowed_root:
+        root = Path(allowed_root).resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError(f"Path outside allowed directory: {root}")
+
+    raw = Path(file_path)
+    if raw.is_symlink():
+        target = raw.resolve()
+        if allowed_root and not target.is_relative_to(Path(allowed_root).resolve()):
+            raise ValueError("Symbolic link points outside allowed directory")
+
+    return resolved
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -228,8 +260,10 @@ def _parse_epub_sync(file_path: str) -> dict:
 # Public async API
 # ---------------------------------------------------------------------------
 
-async def import_epub(file_path: str, session: AsyncSession) -> dict:
+async def import_epub(file_path: str, session: AsyncSession, allowed_root: str | None = None) -> dict:
     """Parse an EPUB file and persist it to the database. Returns book summary."""
+    if allowed_root:
+        _validate_epub_path(file_path, allowed_root)
     # Check if already imported
     result = await session.execute(select(Book).where(Book.file_path == file_path))
     existing = result.scalar_one_or_none()
@@ -321,7 +355,7 @@ async def scan_watch_folder(folder_path: str, session: AsyncSession) -> list[str
             continue
         full_path = os.path.join(folder_path, fname)
         try:
-            await import_epub(full_path, session)
+            await import_epub(full_path, session, allowed_root=folder_path)
             imported.append(full_path)
         except Exception as e:
             _log.warning("[epub] Failed to auto-import %s: %s", full_path, e)

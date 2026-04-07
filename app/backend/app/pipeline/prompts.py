@@ -1,11 +1,33 @@
 """
 Prompt templates and message-builder functions for the multi-stage pipeline.
 
-All builders return a list of {"role": ..., "content": ...} dicts compatible
-with the OpenAI chat-completions API.
+Templates are loaded from disk (app/backend/app/prompts/*.txt) at import time.
+If a file is missing, the inline fallback is used. This allows editing prompts
+without code changes.
 """
+import logging
+from pathlib import Path
 
-_STAGE1_SYSTEM = """\
+_log = logging.getLogger(__name__)
+_PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+
+
+def _load_template(filename: str, fallback: str) -> str:
+    """Load a prompt template from disk, falling back to inline string."""
+    path = _PROMPTS_DIR / filename
+    if path.exists():
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+            if content:
+                _log.debug("Loaded prompt template: %s", filename)
+                return content
+        except Exception as e:
+            _log.warning("Failed to load %s: %s — using fallback", filename, e)
+    return fallback
+
+
+# Inline fallbacks (identical to the disk versions for bootstrapping)
+_STAGE1_FALLBACK = """\
 You are an expert Japanese-to-English light novel translator.
 
 Rules:
@@ -14,10 +36,9 @@ Rules:
 - Render onomatopoeia naturally in English; do not transliterate romaji sounds.
 - Keep Japanese proper nouns (names, places) unless a canonical English form exists.
 - Output only the English translation. Do not include the original Japanese, commentary,
-  or explanatory footnotes unless the source text itself contains them.\
-"""
+  or explanatory footnotes unless the source text itself contains them."""
 
-_CONSENSUS_SYSTEM = """\
+_CONSENSUS_FALLBACK = """\
 You are a senior Japanese-to-English translation editor. You will be given three
 independent English translations of the same Japanese source text, produced by
 different AI translators. Your task is to synthesize a single consensus translation
@@ -31,10 +52,9 @@ that:
 - Corrects any clear mistranslations present in one or more drafts.
 
 Output only the consensus English translation. No commentary, no headers, no
-numbering.\
-"""
+numbering."""
 
-_STAGE2_SYSTEM = """\
+_STAGE2_FALLBACK = """\
 You are a professional Japanese-to-English literary editor specializing in light
 novels. You will receive a consensus English translation draft. Your task is to
 refine it into polished, publication-ready prose:
@@ -45,10 +65,9 @@ refine it into polished, publication-ready prose:
 - Preserve all character names, honorifics, and proper nouns exactly as given.
 - Do not add or remove content — only refine the existing translation.
 
-Output only the refined English translation.\
-"""
+Output only the refined English translation."""
 
-_STAGE3_SYSTEM = """\
+_STAGE3_FALLBACK = """\
 You are a meticulous copy-editor. You will receive a refined English translation
 of a Japanese light novel passage. Perform a final polish pass:
 
@@ -57,8 +76,13 @@ of a Japanese light novel passage. Perform a final polish pass:
   light-novel conventions.
 - Do not change word choices or sentence structures unless they contain a clear
   grammatical error.
-- Output only the final polished text.\
-"""
+- Output only the final polished text."""
+
+# Load templates (disk → fallback)
+_STAGE1_SYSTEM = _load_template("stage1_translate.txt", _STAGE1_FALLBACK)
+_CONSENSUS_SYSTEM = _load_template("consensus_merge.txt", _CONSENSUS_FALLBACK)
+_STAGE2_SYSTEM = _load_template("stage2_refine.txt", _STAGE2_FALLBACK)
+_STAGE3_SYSTEM = _load_template("stage3_polish.txt", _STAGE3_FALLBACK)
 
 
 def stage1_messages(source_text: str, notes: str = "") -> list[dict[str, str]]:
@@ -76,12 +100,7 @@ def consensus_messages(
     source_text: str,
     translations: dict[str, str],
 ) -> list[dict[str, str]]:
-    """
-    Messages for the consensus/merger model.
-
-    ``translations`` is a mapping of label → translation text, e.g.
-    {"gemma": "...", "deepseek": "...", "qwen32b": "..."}.
-    """
+    """Messages for the consensus/merger model."""
     drafts = "\n\n".join(
         f"--- Translation {i + 1} ({label}) ---\n{text}"
         for i, (label, text) in enumerate(translations.items())

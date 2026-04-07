@@ -42,3 +42,15 @@ class TestPromptTemplateLoading:
         monkeypatch.setattr(prompts, "_PROMPTS_DIR", tmp_path)
         result = prompts._load_template("nonexistent.txt", "FALLBACK_VALUE")
         assert result == "FALLBACK_VALUE"
+
+
+class TestPipelineGracefulDegradation:
+    """Verify pipeline handles partial Stage 1 failures."""
+
+    def test_pipeline_threshold_is_one(self):
+        """The minimum Stage 1 models needed should be 1, not 2."""
+        from pathlib import Path
+        runner_src = (Path(__file__).resolve().parent.parent / "app" / "pipeline" / "runner.py").read_text(encoding="utf-8")
+        # Must not contain the old "< 2" guard; must contain the new "not stage1_outputs" guard
+        assert "< 2" not in runner_src
+        assert "not stage1_outputs" in runner_src or "== 0" in runner_src

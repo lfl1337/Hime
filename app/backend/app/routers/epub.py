@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
 from ..middleware.rate_limit import limiter
+from ..utils.sanitize import sanitize_text  # noqa: F401 — available for future endpoint use
 from ..services.epub_service import (
     export_chapter,
     get_chapters,
@@ -28,7 +29,7 @@ class ImportRequest(BaseModel):
 
 
 class TranslationRequest(BaseModel):
-    text: str
+    text: str = Field(..., max_length=50_000)
 
 
 class SettingRequest(BaseModel):
@@ -47,14 +48,27 @@ async def api_import_epub(
     body: ImportRequest,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    # Reject null bytes and env var syntax in file path
+    if "\x00" in body.file_path:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file path")
+    if "${" in body.file_path or "%" in body.file_path:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file path")
+
     file_path = Path(body.file_path).resolve()
     if file_path.suffix.lower() != ".epub":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .epub files allowed")
+
+    # Path traversal: must be inside the watch folder
     watch_folder_str = await get_setting("epub_watch_folder", session)
     if watch_folder_str:
         watch_folder = Path(watch_folder_str).resolve()
-        if not str(file_path).startswith(str(watch_folder)):
+        if not file_path.is_relative_to(watch_folder):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Path outside allowed folder")
+
+    # Reject symlinks
+    if file_path.is_symlink():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Symbolic links not allowed")
+
     try:
         return await import_epub(str(file_path), session)
     except Exception as e:

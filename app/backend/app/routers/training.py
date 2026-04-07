@@ -131,14 +131,14 @@ async def training_stream(
 # ---------------------------------------------------------------------------
 
 class StartTrainingRequest(BaseModel):
-    model_name: str
-    resume_checkpoint: str | None = None
-    epochs: int = 3
-    model_key: str | None = None  # 'qwen32b' | 'qwen14b' | 'qwen72b' | 'gemma27b' | 'deepseek'
+    model_name: str = Field(..., pattern=r"^[\w\-\.]+$", max_length=128)
+    resume_checkpoint: str | None = Field(default=None, pattern=r"^checkpoint-\d+$")
+    epochs: int = Field(default=3, ge=1, le=100)
+    model_key: str | None = Field(default=None, pattern=r"^(qwen32b|qwen14b|qwen72b|gemma27b|deepseek)$")
 
 
 class StopTrainingRequest(BaseModel):
-    model_name: str
+    model_name: str = Field(..., pattern=r"^[\w\-\.]+$", max_length=128)
 
 
 @router.post("/start", response_model=TrainingProcess)
@@ -200,8 +200,15 @@ _EDITABLE_TRAINING_KEYS = {"models_base_path", "lora_path", "training_log_path",
 
 
 class TrainingConfigUpdate(BaseModel):
-    key: str
-    value: str
+    key: str = Field(..., pattern=r"^(models_base_path|lora_path|training_log_path|scripts_path)$")
+    value: str = Field(..., max_length=1024)
+
+    @field_validator("value")
+    @classmethod
+    def _no_dangerous_chars(cls, v: str) -> str:
+        if "\x00" in v or "\n" in v or "\r" in v:
+            raise ValueError("Invalid characters in value")
+        return v
 
 
 @router.get("/config", response_model=TrainingConfigPaths)

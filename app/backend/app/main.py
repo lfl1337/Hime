@@ -111,18 +111,16 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Audit logging — must come before CORS so every request is captured
 app.add_middleware(AuditMiddleware, log_path=settings.audit_log_path)
 
-# CORS — allow Tauri origins (dev + packaged) only
+# CORS — strict origins: Tauri dev (Vite) + packaged Tauri app (Windows WebView2)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:1420",   # Tauri dev default
-        "http://127.0.0.1:1420",
-        "tauri://localhost",       # Packaged Tauri app (macOS/Linux)
-        "http://tauri.localhost",  # Packaged Tauri app (Windows WebView2)
+        "http://localhost:1420",      # Tauri dev (Vite dev server)
+        "https://tauri.localhost",    # Packaged Tauri app (Windows WebView2)
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
 
 # Routers

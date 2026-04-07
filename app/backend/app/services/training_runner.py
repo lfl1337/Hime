@@ -1,8 +1,11 @@
 """Start/stop LoRA training jobs from the app UI."""
+import ctypes
+import ctypes.wintypes
 import json
 import logging
 import re
 import subprocess
+import sys
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +16,77 @@ from pydantic import BaseModel
 from ..config import settings
 
 _log = logging.getLogger(__name__)
+
+
+# Windows Job Object — ensures child processes die when parent dies
+_job_handle = None
+
+def _create_job_object():
+    """Create a Windows Job Object with KILL_ON_JOB_CLOSE flag."""
+    global _job_handle
+    if sys.platform != "win32" or _job_handle is not None:
+        return
+    try:
+        kernel32 = ctypes.windll.kernel32
+
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            _log.warning("Failed to create Job Object")
+            return
+
+        class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", ctypes.wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", ctypes.wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", ctypes.wintypes.DWORD),
+                ("SchedulingClass", ctypes.wintypes.DWORD),
+            ]
+
+        class IO_COUNTERS(ctypes.Structure):
+            _fields_ = [("i", ctypes.c_uint64)] * 6
+
+        class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                ("IoInfo", IO_COUNTERS),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        kernel32.SetInformationJobObject(
+            job, 9,  # JobObjectExtendedLimitInformation
+            ctypes.byref(info), ctypes.sizeof(info),
+        )
+        _job_handle = job
+        _log.info("Windows Job Object created for child process management")
+    except Exception as e:
+        _log.warning("Job Object creation failed: %s", e)
+
+
+def _assign_to_job(proc) -> None:
+    """Assign a subprocess to the Job Object so it dies with the parent."""
+    if _job_handle is None or sys.platform != "win32":
+        return
+    try:
+        handle = int(proc._handle)  # Windows process handle
+        ctypes.windll.kernel32.AssignProcessToJobObject(_job_handle, handle)
+        _log.debug("Assigned PID %d to Job Object", proc.pid)
+    except Exception as e:
+        _log.warning("Failed to assign PID %d to Job Object: %s", proc.pid, e)
+
+
+# Initialize Job Object on module load
+_create_job_object()
+
 
 # Maps model_key → canonical LoRA output directory name (must match frontend MODEL_TO_LORA_DIR)
 MODEL_KEY_TO_RUN_NAME: dict[str, str] = {
@@ -168,13 +242,28 @@ def start_training(
             stderr=_stderr_fh,  # Capture C-level crashes (CUDA, OOM, import errors) to log
         )
     # Parent-Handle geschlossen; Child-Kopie des FD bleibt offen
+    _assign_to_job(proc)
 
+    import time as _time
+    _audit_log = logging.getLogger("hime.audit")
+    _audit_log.info(json.dumps({
+        "ts": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        "event": "subprocess_start",
+        "model_name": model_name,
+        "pid": proc.pid,
+        "command": cmd,
+        "epochs": epochs,
+        "checkpoint": resume_checkpoint,
+    }, ensure_ascii=False))
+
+    max_duration = 72 * 3600
     meta = {
         "pid": proc.pid,
         "started_at": datetime.now(UTC).isoformat(),
         "checkpoint": resume_checkpoint,
         "log_file": log,
         "epochs": epochs,
+        "max_duration_seconds": max_duration,
     }
     pid_path.write_text(json.dumps(meta), encoding="utf-8")
 
@@ -296,6 +385,14 @@ def stop_training(model_name: str) -> dict:
     except Exception as e:
         _log.debug("CUDA cache clear skipped: %s", e)
 
+    import time as _time
+    _audit_log = logging.getLogger("hime.audit")
+    _audit_log.info(json.dumps({
+        "ts": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        "event": "subprocess_stop",
+        "model_name": model_name,
+    }, ensure_ascii=False))
+
     return {"stopped": True, "graceful": graceful, "model_name": model_name}
 
 
@@ -315,6 +412,20 @@ def get_running_processes() -> list[TrainingProcess]:
                     model_name, pid,
                 )
                 pid_file.unlink(missing_ok=True)
+                continue
+            # Enforce max duration timeout
+            max_dur = data.get("max_duration_seconds", 72 * 3600)
+            started = datetime.fromisoformat(data["started_at"])
+            elapsed = (datetime.now(UTC) - started).total_seconds()
+            if elapsed > max_dur:
+                _log.warning(
+                    "Training %s exceeded max duration (%.0fh > %.0fh) — killing",
+                    model_name, elapsed / 3600, max_dur / 3600,
+                )
+                try:
+                    stop_training(model_name)
+                except Exception as e:
+                    _log.error("Failed to stop timed-out training %s: %s", model_name, e)
                 continue
             processes.append(TrainingProcess(model_name=model_name, **data))
         except Exception as e:

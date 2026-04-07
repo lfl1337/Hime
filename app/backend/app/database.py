@@ -89,10 +89,23 @@ async def init_db() -> None:
             "DELETE FROM hardware_stats WHERE timestamp < datetime('now', '-24 hours')"
         ))
 
+        # Indexes for EPUB query patterns
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters(book_id)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_paragraphs_chapter_id ON paragraphs(chapter_id)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_translations_source_text_id ON translations(source_text_id)"
+        ))
+
         # Seed default settings (INSERT OR IGNORE preserves user changes)
+        from .core.paths import EPUB_WATCH_DIR
+        _epub_default = str(EPUB_WATCH_DIR).replace("\\", "/")
         await conn.execute(text(
             "INSERT OR IGNORE INTO settings (key, value) VALUES "
-            "('epub_watch_folder', 'C:/Projekte/Hime/data/epubs/'), "
+            f"('epub_watch_folder', '{_epub_default}'), "
             "('auto_scan_interval', '60')"
         ))
 

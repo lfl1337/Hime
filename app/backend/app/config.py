@@ -10,6 +10,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .core import paths as _paths
+
 _HIME_DATA_DIR = os.environ.get("HIME_DATA_DIR")
 
 if _HIME_DATA_DIR:
@@ -39,13 +41,13 @@ class Settings(BaseSettings):
         else "logs/hime-backend.log"
     )
     rate_limit_per_minute: int = 60
-    epub_watch_folder_default: str = "C:/Projekte/Hime/data/epubs/"
+    epub_watch_folder_default: str = str(_paths.EPUB_WATCH_DIR)
 
     # Training / fine-tuning paths (override via .env if needed)
-    models_base_path: str = r"C:\Projekte\Hime\modelle"
-    lora_path: str = r"C:\Projekte\Hime\modelle\lora\Qwen2.5-32B-Instruct"
-    training_log_path: str = r"C:\Projekte\Hime\app\backend\logs\training"
-    scripts_path: str = r"C:\Projekte\Hime\scripts"
+    models_base_path: str = str(_paths.MODELS_DIR)
+    lora_path: str = str(_paths.lora_dir("Qwen2.5-32B-Instruct"))
+    training_log_path: str = str(_paths.TRAINING_LOG_DIR)
+    scripts_path: str = str(_paths.SCRIPTS_DIR)
 
     # Pipeline Stage 1 — three parallel translators
     hime_gemma_url: str = "http://127.0.0.1:8001/v1"

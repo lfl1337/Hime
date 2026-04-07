@@ -5,6 +5,7 @@ import { usePipeline } from '@/api/websocket'
 import { useStore } from '@/store'
 import type { BookSummary, ChapterSummary, ParagraphInfo } from '@/api/epub'
 import { PipelineProgress } from '@/components/PipelineProgress'
+import { Stage1Panel } from '@/components/Stage1Panel'
 import { ParagraphNavigator } from './ParagraphNavigator'
 
 interface Props {
@@ -218,6 +219,20 @@ export function TranslationWorkspace({ book, chapter }: Props) {
             {pipeline.stage !== 'idle' && (
               <PipelineProgress currentStage={pipeline.stage} />
             )}
+
+            {/* Stage 1 streaming detail */}
+            <Stage1Panel
+              stage1Tokens={pipeline.stage1Tokens}
+              stage1Complete={pipeline.stage1Complete}
+              modelErrors={pipeline.modelErrors}
+              modelUnavailable={pipeline.modelUnavailable}
+              isStage1Active={pipeline.stage === 'stage1'}
+              isStage1Done={
+                pipeline.stage !== 'idle' &&
+                pipeline.stage !== 'stage1' &&
+                Object.keys(pipeline.stage1Complete).length > 0
+              }
+            />
 
             {/* Already translated: show saved text */}
             {currentParagraph?.is_translated && !isRunning && !pipeline.finalOutput && (

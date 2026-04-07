@@ -8,6 +8,7 @@ interface ModelPanelProps {
   online: boolean
   isTraining: boolean
   output: ModelOutput
+  unavailable?: boolean
 }
 
 const ACCENT_BADGE: Record<'blue' | 'emerald' | 'amber', string> = {
@@ -16,7 +17,7 @@ const ACCENT_BADGE: Record<'blue' | 'emerald' | 'amber', string> = {
   amber:   'bg-amber-900/50 text-amber-300 border border-amber-700/50',
 }
 
-export function ModelPanel({ displayName, accentColor, online, isTraining, output }: ModelPanelProps) {
+export function ModelPanel({ displayName, accentColor, online, isTraining, output, unavailable }: ModelPanelProps) {
   const [copied, setCopied] = useState(false)
 
   const statusLabel = isTraining ? 'Training' : online ? 'Online' : 'Offline'
@@ -50,6 +51,12 @@ export function ModelPanel({ displayName, accentColor, online, isTraining, outpu
 
       {/* Output area */}
       <div className="flex-1 min-h-[200px] max-h-[400px] overflow-y-auto p-4 font-mono text-sm text-zinc-300 leading-relaxed">
+        {unavailable && !output.text && (
+          <div className="flex items-center gap-2 text-zinc-600 text-sm italic">
+            <span className="w-2 h-2 rounded-full bg-zinc-600" />
+            Model unavailable — output will be skipped in consensus
+          </div>
+        )}
         {output.error ? (
           <span className="text-red-400">{output.error}</span>
         ) : output.text ? (

@@ -18,6 +18,7 @@ export type PipelineEvent =
   | { event: 'pipeline_complete'; final_output: string; duration_ms: number }
   | { event: 'pipeline_error'; detail: string }
   | { event: 'model_error'; stage: string; model: string; detail: string }
+  | { event: 'model_unavailable'; model: string; reason: string }
   | { event: 'pipeline_status'; current_stage: string }
 
 export type PipelineStage =
@@ -34,6 +35,7 @@ export interface PipelineState {
   stage1Tokens: Record<string, string>
   stage1Complete: Record<string, string>
   modelErrors: Record<string, string>
+  modelUnavailable: Record<string, string>
   consensusOutput: string
   stage2Output: string
   finalOutput: string
@@ -47,6 +49,7 @@ const initialState: PipelineState = {
   stage1Tokens: {},
   stage1Complete: {},
   modelErrors: {},
+  modelUnavailable: {},
   consensusOutput: '',
   stage2Output: '',
   finalOutput: '',
@@ -179,6 +182,12 @@ function applyEvent(prev: PipelineState, ev: PipelineEvent): PipelineState {
       return {
         ...prev,
         modelErrors: { ...prev.modelErrors, [ev.model]: ev.detail },
+      }
+
+    case 'model_unavailable':
+      return {
+        ...prev,
+        modelUnavailable: { ...prev.modelUnavailable, [ev.model]: ev.reason },
       }
 
     case 'pipeline_status':

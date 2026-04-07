@@ -88,9 +88,9 @@ LOGGING_STEPS = 10
 WARMUP_STEPS  = 50     # Fixe 50 Steps statt 5% Ratio
 WEIGHT_DECAY  = 0.01
 
-PROJECT_ROOT = Path(r"C:\Projekte\Hime")
-TRAINING_DIR = PROJECT_ROOT / "data" / "training"
-MODELS_DIR   = PROJECT_ROOT / "modelle" / "lora"
+_SCRIPT_ROOT = Path(__file__).resolve().parent.parent
+TRAINING_DIR = Path(os.environ.get("HIME_TRAINING_DATA_DIR", str(_SCRIPT_ROOT / "data" / "training")))
+MODELS_DIR   = Path(os.environ.get("HIME_MODELS_DIR", str(_SCRIPT_ROOT / "modelle"))) / "lora"
 
 PROMPT_TEMPLATE = """<|im_start|>system
 You are a professional Japanese to English translator specializing in yuri light novels. Translate accurately while preserving the intimate tone, character voices, and emotional nuance.<|im_end|>
@@ -438,6 +438,12 @@ def main():
                         help="Full resume incl. optimizer state (may cause VRAM thrashing on 32GB GPUs)")
     parser.add_argument("--fresh",       action="store_true",
                         help="Ignore checkpoints, train from scratch")
+    parser.add_argument("--model-dir",   type=str,
+        default=os.environ.get("HIME_MODELS_DIR", str(Path(__file__).resolve().parent.parent / "modelle")),
+        help="Base models directory")
+    parser.add_argument("--training-data", type=str,
+        default=os.environ.get("HIME_TRAINING_DATA_DIR", str(Path(__file__).resolve().parent.parent / "data" / "training")),
+        help="Training data directory")
 
     # parse_known_args to ignore HuggingFace Trainer args passed from training_runner
     args, _ = parser.parse_known_args()
@@ -459,13 +465,12 @@ def main():
     else:
         adapter_name = cfg.get('lora_dir', model_hf_name.split("/")[-1].replace("-bnb-4bit", ""))
 
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
-    else:
-        output_dir = MODELS_DIR / adapter_name
+    LORA_OUTPUT = args.output_dir or str(Path(args.model_dir) / "lora" / adapter_name)
+    output_dir = Path(LORA_OUTPUT)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    data_file = Path(args.data_file) if args.data_file else TRAINING_DIR / "hime_training_all.jsonl"
+    DATA_PATH = str(Path(args.training_data) / "hime_training_all.jsonl")
+    data_file = Path(args.data_file) if args.data_file else Path(DATA_PATH)
 
     stop_config = _load_stop_config(args)
     # --max-epochs overrides --epochs

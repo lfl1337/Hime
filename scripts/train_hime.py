@@ -60,9 +60,10 @@ LOGGING_STEPS   = 10
 
 # ═══════════════════════════════════════════════════════════════
 
-PROJECT_ROOT  = Path(r"C:\Projekte\Hime")
-TRAINING_DIR  = PROJECT_ROOT / "data" / "training"
-MODELS_DIR    = PROJECT_ROOT / "modelle" / "lora"
+_SCRIPT_ROOT  = Path(__file__).resolve().parent.parent
+PROJECT_ROOT  = Path(os.environ.get("HIME_MODELS_DIR", str(_SCRIPT_ROOT / "modelle"))).parent
+TRAINING_DIR  = Path(os.environ.get("HIME_TRAINING_DATA_DIR", str(_SCRIPT_ROOT / "data" / "training")))
+MODELS_DIR    = Path(os.environ.get("HIME_MODELS_DIR", str(_SCRIPT_ROOT / "modelle"))) / "lora"
 
 # Adapter Name aus Modell ableiten
 ADAPTER_NAME  = MODEL_NAME.split("/")[-1].replace("-bnb-4bit", "")
@@ -567,7 +568,26 @@ if __name__ == "__main__":
                          help="Use best checkpoint (by eval_loss) instead of latest")
     _parser.add_argument("--fresh",        action="store_true",
                          help="Ignore checkpoints, train from scratch")
+    _parser.add_argument("--model-dir",    type=str,
+        default=os.environ.get("HIME_MODELS_DIR", str(Path(__file__).resolve().parent.parent / "modelle")),
+        help="Base models directory")
+    _parser.add_argument("--training-data", type=str,
+        default=os.environ.get("HIME_TRAINING_DATA_DIR", str(Path(__file__).resolve().parent.parent / "data" / "training")),
+        help="Training data directory")
+    _parser.add_argument("--output-dir",   type=str,
+        default=None,
+        help="Override LoRA output directory")
     _args, _ = _parser.parse_known_args()
+
+    # Apply path overrides to module-level globals before main() runs
+    LORA_OUTPUT = _args.output_dir or str(Path(_args.model_dir) / "lora" / ADAPTER_NAME)
+    DATA_PATH   = str(Path(_args.training_data) / "hime_training_all.jsonl")
+    # Patch globals so load_training_data() and train() pick them up
+    _mod = sys.modules[__name__]
+    _mod.OUTPUT_DIR   = Path(LORA_OUTPUT)
+    _mod.TRAINING_DIR = Path(_args.training_data)
+    Path(LORA_OUTPUT).mkdir(parents=True, exist_ok=True)
+
     if _args.log_file:
         Path(_args.log_file).parent.mkdir(parents=True, exist_ok=True)
         _log_fh = open(_args.log_file, "a", encoding="utf-8", buffering=1)

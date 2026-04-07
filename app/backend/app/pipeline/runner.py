@@ -134,10 +134,19 @@ async def run_pipeline(
                         "detail": "Empty output",
                     })
 
-        if len(stage1_outputs) < 2:
+        # Notify frontend about unavailable models
+        for label in stage1_labels:
+            if label not in stage1_outputs:
+                await ws_queue.put({
+                    "event": "model_unavailable",
+                    "model": label,
+                    "reason": "Model failed or returned empty output",
+                })
+
+        if not stage1_outputs:
             await ws_queue.put({
                 "event": "pipeline_error",
-                "detail": "Fewer than 2 Stage 1 models succeeded",
+                "detail": "No Stage 1 models succeeded — cannot continue pipeline",
             })
             await _checkpoint(job_id, current_stage="error")
             return

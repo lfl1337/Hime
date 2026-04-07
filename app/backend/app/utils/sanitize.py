@@ -1,8 +1,8 @@
 """
 Input sanitization utilities.
 
-Strips whitespace, enforces maximum length, and rejects text that contains
-common prompt-injection patterns before it reaches the Claude API.
+Strips whitespace, enforces maximum length, rejects null bytes,
+environment variable syntax, and prompt-injection patterns.
 """
 import re
 
@@ -10,9 +10,7 @@ from fastapi import HTTPException, status
 
 MAX_TEXT_LENGTH = 50_000
 
-# Patterns that indicate an attempt to override the system prompt or hijack
-# the model's behavior. This is not an exhaustive list — it covers the most
-# common jailbreak / injection vectors seen in the wild.
+# Prompt-injection patterns
 _INJECTION_PATTERNS: list[str] = [
     r"(?i)ignore\s+(all\s+)?(previous|prior|above)\s+instructions",
     r"(?i)disregard\s+(all\s+)?(previous|prior|above)\s+instructions",
@@ -29,6 +27,12 @@ _INJECTION_PATTERNS: list[str] = [
 
 _COMPILED: list[re.Pattern[str]] = [re.compile(p) for p in _INJECTION_PATTERNS]
 
+# Environment variable interpolation patterns
+_ENV_VAR_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\$\{[^}]+\}"),       # ${VAR_NAME}
+    re.compile(r"%[A-Za-z_]\w*%"),    # %VAR_NAME%
+]
+
 
 def sanitize_text(text: str, field_name: str = "text") -> str:
     """
@@ -36,8 +40,10 @@ def sanitize_text(text: str, field_name: str = "text") -> str:
 
     1. Strip leading/trailing whitespace.
     2. Reject if empty after stripping.
-    3. Reject if longer than MAX_TEXT_LENGTH.
-    4. Reject if any prompt-injection pattern matches.
+    3. Reject if contains null bytes.
+    4. Reject if longer than MAX_TEXT_LENGTH.
+    5. Reject if contains environment variable syntax.
+    6. Reject if any prompt-injection pattern matches.
 
     Returns the sanitized string, or raises HTTPException 422.
     """
@@ -49,6 +55,12 @@ def sanitize_text(text: str, field_name: str = "text") -> str:
             detail=f"'{field_name}' must not be empty.",
         )
 
+    if "\x00" in text:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"'{field_name}' contains disallowed characters (null byte).",
+        )
+
     if len(text) > MAX_TEXT_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -58,6 +70,13 @@ def sanitize_text(text: str, field_name: str = "text") -> str:
             ),
         )
 
+    for pattern in _ENV_VAR_PATTERNS:
+        if pattern.search(text):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"'{field_name}' contains disallowed content (environment variable syntax).",
+            )
+
     for pattern in _COMPILED:
         if pattern.search(text):
             raise HTTPException(
@@ -66,3 +85,8 @@ def sanitize_text(text: str, field_name: str = "text") -> str:
             )
 
     return text
+
+
+def coerce_numeric_string(value: str) -> str:
+    """Replace German-locale comma with dot for numeric inputs."""
+    return value.replace(",", ".")

@@ -153,3 +153,35 @@ class TestRetryLoop:
         )
         assert rc == 0
         assert attempts["n"] == 1
+
+
+class TestSignalHandling:
+    def test_sigint_sets_aborted_flag(self):
+        # The wrapper module installs a signal handler on import that flips
+        # twr._aborted_by_signal to True. We can call the handler directly.
+        twr._aborted_by_signal = False
+        twr._signal_handler(2, None)  # signal.SIGINT == 2
+        assert twr._aborted_by_signal is True
+
+    def test_aborted_flag_breaks_retry_loop(self, monkeypatch, tmp_path: Path):
+        twr._aborted_by_signal = False
+
+        def fake_runner(cmd, log_path):
+            twr._aborted_by_signal = True  # simulate SIGINT during run
+            return 130  # Ctrl+C exit code
+
+        monkeypatch.setattr(twr, "run_training_subprocess", fake_runner)
+        monkeypatch.setattr(twr.time, "sleep", lambda _s: None)
+        rc = twr.run_with_retries(
+            cmd=["python", "fake.py"],
+            log_path=tmp_path / "auto_resume.log",
+            max_restarts=5,
+            checkpoint_dir=tmp_path / "checkpoints",
+            model_name="X",
+            model_key=None,
+            epochs=1.0,
+            curriculum_state_path=None,
+        )
+        assert rc == 130
+        # Reset for other tests
+        twr._aborted_by_signal = False

@@ -27,11 +27,25 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+
+_aborted_by_signal = False
+
+
+def _signal_handler(signum, frame):
+    global _aborted_by_signal
+    _aborted_by_signal = True
+
+
+# Install handlers at import time so subprocess Ctrl+C also reaches us
+signal.signal(signal.SIGINT, _signal_handler)
+if hasattr(signal, "SIGTERM"):
+    signal.signal(signal.SIGTERM, _signal_handler)
 
 # Resolve project root from this file's location (no hardcoded paths)
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -170,6 +184,10 @@ def run_with_retries(
     consecutive_failures = 0
     while True:
         rc = run_training_subprocess(cmd, log_path)
+
+        if _aborted_by_signal:
+            _log_event(log_path, "aborted_by_signal", model=model_name, returncode=rc)
+            return rc
 
         if rc == 0:
             if _read_curriculum_promotion_flag(curriculum_state_path):

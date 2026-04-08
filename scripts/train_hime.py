@@ -29,6 +29,38 @@ _sys.path.insert(0, str(Path(__file__).parent))
 from callbacks.smart_stopping import SmartStoppingCallback
 from callbacks.manual_save import ManualSaveCallback
 
+# Inserted by WS1 v1.2.1 — curriculum learning hook (NEXT RUN ONLY)
+import sys as _sys2
+_sys2.path.insert(0, str(Path(__file__).resolve().parent.parent / "app" / "backend"))
+
+try:
+    from app.training.curriculum import CurriculumDataLoader, Tier
+    from app.training.curriculum_callback import CurriculumCallback
+    _CURRICULUM_AVAILABLE = True
+except Exception as _e:
+    print(f"[curriculum] Module unavailable ({_e}); falling back to legacy data loader")
+    _CURRICULUM_AVAILABLE = False
+
+
+def _load_curriculum_config() -> dict | None:
+    cfg_path = Path(__file__).parent / "training_config.json"
+    if not cfg_path.exists():
+        return None
+    try:
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        return data.get("curriculum")
+    except Exception:
+        return None
+
+
+def _load_curriculum_state(state_path: Path) -> dict | None:
+    if not state_path.exists():
+        return None
+    try:
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
 # ═══════════════════════════════════════════════════════════════
 #  HIER ANPASSEN - Einfach ändern und neu starten
 # ═══════════════════════════════════════════════════════════════
@@ -84,6 +116,42 @@ You are a professional Japanese to English translator specializing in yuri light
 def load_training_data() -> Dataset:
     """Lädt und formatiert die Trainingsdaten."""
     import time as _time
+
+    # ----- Curriculum override (v1.2.1, NEXT RUN ONLY) -----
+    cfg = _load_curriculum_config()
+    if _CURRICULUM_AVAILABLE and cfg and cfg.get("enabled"):
+        state_path = OUTPUT_DIR / "curriculum_state.json"
+        state = _load_curriculum_state(state_path) or {}
+        tier_idx = int(state.get("current_tier_index", 0))
+        tiers_cfg = cfg["tiers"]
+        if tier_idx >= len(tiers_cfg):
+            tier_idx = len(tiers_cfg) - 1
+        active_tier = tiers_cfg[tier_idx]
+        min_score = float(active_tier["min_score"])
+        source_file = TRAINING_DIR / "jparacrawl_500k.jsonl"
+        literary = [TRAINING_DIR / Path(p).name for p in cfg.get("literary_files", [])]
+
+        print(f"[curriculum] tier={active_tier['name']} min_score={min_score}")
+        loader = CurriculumDataLoader(source_file=source_file, literary_files=literary)
+        ds = loader.load(min_score=min_score)
+        # Format with PROMPT_TEMPLATE
+        formatted = []
+        for entry in ds:
+            text = PROMPT_TEMPLATE.format(
+                instruction=entry.get("instruction", "Translate the following Japanese text to English."),
+                input=entry["input"],
+                output=entry["output"],
+            )
+            formatted.append({"text": text})
+
+        # 90/10 split (matches legacy path so downstream train() signature stays identical)
+        split = int(len(formatted) * 0.9)
+        train_data = formatted[:split]
+        eval_data  = formatted[split:]
+        print(f"[curriculum] formatted={len(formatted):,} | Train: {len(train_data):,} | Eval: {len(eval_data):,}")
+        return Dataset.from_list(train_data), Dataset.from_list(eval_data)
+
+    # ----- Legacy path (unchanged) -----
     data_file = TRAINING_DIR / "hime_training_all.jsonl"
 
     if not data_file.exists():
@@ -309,25 +377,38 @@ def _load_stop_config(cli_args) -> dict:
 
 
 def _build_callbacks(stop_config: dict | None) -> list:
-    """Build the callbacks list, optionally including SmartStoppingCallback."""
+    """Build the callbacks list, optionally including SmartStoppingCallback and CurriculumCallback."""
     cbs = [SaveCheckpointCallback(), ManualSaveCallback()]
-    if stop_config is None:
-        return cbs
-    mode = stop_config.get("stop_mode", "none")
-    has_target = stop_config.get("target_loss") is not None
-    has_patience = stop_config.get("patience") is not None
-    if mode != "none" and (has_target or has_patience):
-        state_file = str(OUTPUT_DIR / "smart_stop_state.json")
-        cbs.append(SmartStoppingCallback(
-            target_loss=stop_config.get("target_loss"),
-            target_loss_metric=stop_config.get("target_loss_metric", "loss"),
-            target_confirmations=stop_config.get("target_confirmations", 3),
-            patience=stop_config.get("patience"),
-            patience_metric=stop_config.get("patience_metric", "eval_loss"),
-            min_delta=stop_config.get("min_delta", 0.001),
-            min_steps=stop_config.get("min_steps", 0),
-            state_file=state_file,
-        ))
+    if stop_config is not None:
+        mode = stop_config.get("stop_mode", "none")
+        has_target = stop_config.get("target_loss") is not None
+        has_patience = stop_config.get("patience") is not None
+        if mode != "none" and (has_target or has_patience):
+            state_file = str(OUTPUT_DIR / "smart_stop_state.json")
+            cbs.append(SmartStoppingCallback(
+                target_loss=stop_config.get("target_loss"),
+                target_loss_metric=stop_config.get("target_loss_metric", "loss"),
+                target_confirmations=stop_config.get("target_confirmations", 3),
+                patience=stop_config.get("patience"),
+                patience_metric=stop_config.get("patience_metric", "eval_loss"),
+                min_delta=stop_config.get("min_delta", 0.001),
+                min_steps=stop_config.get("min_steps", 0),
+                state_file=state_file,
+            ))
+
+    # Curriculum callback (v1.2.1, NEXT RUN ONLY) — appended if config has curriculum.enabled
+    _cfg_check = _load_curriculum_config()
+    if _CURRICULUM_AVAILABLE and _cfg_check and _cfg_check.get("enabled"):
+        _tiers = [Tier(name=t["name"], min_score=float(t["min_score"])) for t in _cfg_check["tiers"]]
+        _trigger = _cfg_check.get("promotion_trigger", {})
+        cbs.append(
+            CurriculumCallback(
+                tiers=_tiers,
+                state_path=OUTPUT_DIR / "curriculum_state.json",
+                patience=int(_trigger.get("patience", 3)),
+                min_delta=float(_trigger.get("min_delta", 0.001)),
+            )
+        )
     return cbs
 
 

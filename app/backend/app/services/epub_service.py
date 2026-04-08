@@ -7,6 +7,7 @@ import os
 import re
 import warnings
 from datetime import UTC, datetime
+from pathlib import Path
 
 from bs4 import XMLParsedAsHTMLWarning
 from sqlalchemy import select
@@ -261,9 +262,14 @@ def _parse_epub_sync(file_path: str) -> dict:
 # ---------------------------------------------------------------------------
 
 async def import_epub(file_path: str, session: AsyncSession, allowed_root: str | None = None) -> dict:
-    """Parse an EPUB file and persist it to the database. Returns book summary."""
-    if allowed_root:
-        _validate_epub_path(file_path, allowed_root)
+    """Parse an EPUB file and persist it to the database. Returns book summary.
+
+    Path validation is mandatory. If `allowed_root` is omitted, the EPUB watch
+    directory (paths.EPUB_WATCH_DIR) is used.
+    """
+    from ..core import paths as _paths
+    effective_root = allowed_root or str(_paths.EPUB_WATCH_DIR)
+    _validate_epub_path(file_path, effective_root)
     # Check if already imported
     result = await session.execute(select(Book).where(Book.file_path == file_path))
     existing = result.scalar_one_or_none()

@@ -4,11 +4,12 @@ Format: domain\tdomain\tscore\ten_text\tjp_text
 """
 
 import json
+import os
 from pathlib import Path
 from tqdm import tqdm
 
 # ── Konfiguration ─────────────────────────────────────────────
-PROJECT_ROOT = Path(r"C:\Projekte\Hime")
+PROJECT_ROOT = Path(os.environ.get("HIME_PROJECT_ROOT") or Path(__file__).resolve().parent.parent)
 INPUT_FILE   = PROJECT_ROOT / "data" / "raw_jparacrawl" / "extracted" / "en-ja" / "en-ja.bicleaner05.txt"
 TRAINING_DIR = PROJECT_ROOT / "data" / "training"
 TRAINING_DIR.mkdir(parents=True, exist_ok=True)

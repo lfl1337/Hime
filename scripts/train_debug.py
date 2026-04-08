@@ -3,10 +3,13 @@ Minimal debug training script — stripped of all recent additions.
 Tests whether base Unsloth training still works.
 """
 import os
+from pathlib import Path
 import torch
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["UNSLOTH_SKIP_TORCHVISION_CHECK"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+PROJECT_ROOT = Path(os.environ.get("HIME_PROJECT_ROOT") or Path(__file__).resolve().parent.parent)
 
 import unsloth  # Must be imported first
 from unsloth import FastLanguageModel
@@ -19,8 +22,8 @@ import time
 
 # === PATHS ===
 MODEL_NAME = "unsloth/Qwen2.5-32B-Instruct-bnb-4bit"
-DATA_FILE = r"C:\Projekte\Hime\data\training\hime_training_all.jsonl"
-OUTPUT_DIR = r"C:\Projekte\Hime\modelle\lora\Qwen2.5-32B-Instruct\checkpoint"
+DATA_FILE = str(PROJECT_ROOT / "data" / "training" / "hime_training_all.jsonl")
+OUTPUT_DIR = str(PROJECT_ROOT / "modelle" / "lora" / "Qwen2.5-32B-Instruct" / "checkpoint")
 RESUME_FROM = None  # Set to checkpoint path for resume testing
 
 # === MODEL ===

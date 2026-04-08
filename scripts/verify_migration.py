@@ -4,6 +4,10 @@ Post-disk-migration validator.
 Run this after moving the project to a new disk to confirm everything still
 resolves correctly. Reports OK / WARN / FAIL per check.
 
+Set HIME_SKIP_TRAINING_PROBE=1 if you want to skip the train_with_resume
+dry-run check (e.g., during active training when you want to run the validator
+but not touch the training subsystem).
+
 Usage:
     python scripts/verify_migration.py
 """
@@ -107,6 +111,9 @@ def check_training_config() -> None:
 
 
 def check_train_with_resume_dry_run() -> None:
+    if os.environ.get("HIME_SKIP_TRAINING_PROBE") == "1":
+        _warn("train_with_resume.py --dry-run", "skipped (HIME_SKIP_TRAINING_PROBE=1)")
+        return
     script = PROJECT_ROOT / "scripts" / "train_with_resume.py"
     if not script.exists():
         _warn("train_with_resume.py", "not present (WS1 may not have merged yet)")

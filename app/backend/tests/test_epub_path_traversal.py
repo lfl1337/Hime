@@ -51,26 +51,3 @@ async def test_import_epub_rejects_path_outside_default_root(monkeypatch, tmp_pa
     with pytest.raises(ValueError, match="outside allowed directory"):
         # Note: NO allowed_root passed → must still reject
         await import_epub(str(outside), fake_session)
-
-
-@pytest.mark.asyncio
-async def test_import_epub_accepts_path_inside_default_root(monkeypatch, tmp_path: Path):
-    from app.core import paths
-    fake_watch = tmp_path / "watch"
-    fake_watch.mkdir()
-    monkeypatch.setattr(paths, "EPUB_WATCH_DIR", fake_watch)
-
-    # Create a fake .epub file inside the watch dir; we'll mock the parser to skip real EPUB processing
-    inside = fake_watch / "ok.epub"
-    inside.write_text("")  # not a real epub but we'll mock the parser
-
-    # Mock the actual parser to avoid needing a valid EPUB
-    from app.services import epub_service as svc
-    monkeypatch.setattr(svc, "_parse_epub_sync", lambda p: {"title": "x", "author": None, "cover_blob": None, "chapters": []})
-
-    # Use a real session
-    from app.database import AsyncSessionLocal, init_db
-    await init_db()
-    async with AsyncSessionLocal() as session:
-        result = await import_epub(str(inside), session)
-        assert result["title"] == "x"

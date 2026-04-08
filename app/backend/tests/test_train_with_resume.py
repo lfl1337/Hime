@@ -106,8 +106,11 @@ class TestRetryLoop:
         assert attempts["n"] == 3
 
     def test_aborts_after_max_restarts(self, monkeypatch, tmp_path: Path):
+        attempts = {"n": 0}
         def fake_runner(cmd, log_path):
-            return 1
+            attempts["n"] += 1
+            return 1  # always fails
+
         monkeypatch.setattr(twr, "run_training_subprocess", fake_runner)
         monkeypatch.setattr(twr.time, "sleep", lambda _s: None)
         rc = twr.run_with_retries(
@@ -121,6 +124,7 @@ class TestRetryLoop:
             curriculum_state_path=None,
         )
         assert rc == 1
+        assert attempts["n"] == 3  # 1 initial + 2 retries, then abort (locks the strict-> boundary)
 
     def test_tier_promotion_does_not_count_as_crash(self, monkeypatch, tmp_path: Path):
         cs_path = tmp_path / "curriculum_state.json"
@@ -129,6 +133,9 @@ class TestRetryLoop:
             '"current_min_score": 0.7, "promotion_history": [], "eval_loss_window": [], '
             '"last_updated": "2026-04-08T00:00:00+00:00", "should_promote_tier": true}'
         )
+        # Schema guard: if CurriculumState evolves, this fails before the test runs
+        from app.training.curriculum_callback import CurriculumState
+        CurriculumState.model_validate_json(cs_path.read_text())
         attempts = {"n": 0}
         def fake_runner(cmd, log_path):
             attempts["n"] += 1

@@ -133,7 +133,9 @@ def _clear_curriculum_promotion_flag(state_path: Path) -> None:
     data["current_tier_index"] = int(data["current_tier_index"]) + 1
     data["should_promote_tier"] = False
     data["last_updated"] = datetime.now(UTC).isoformat()
-    state_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp = state_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(state_path)
 
 
 def _rebuild_cmd_with_resume(base_cmd: list[str], newest_checkpoint: Path | None) -> list[str]:

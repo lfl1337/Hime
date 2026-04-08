@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Path as FPath, Query, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from ..config import _ENV_FILE, settings
 from ..services.training_monitor import (
@@ -133,8 +133,14 @@ async def training_stream(
 class StartTrainingRequest(BaseModel):
     model_name: str = Field(..., pattern=r"^[\w\-\.]+$", max_length=128)
     resume_checkpoint: str | None = Field(default=None, pattern=r"^checkpoint-\d+$")
-    epochs: int = Field(default=3, ge=1, le=100)
+    epochs: float = Field(default=3, ge=0.1, le=20.0)
     model_key: str | None = Field(default=None, pattern=r"^(qwen32b|qwen14b|qwen72b|gemma27b|deepseek)$")
+    # v1.2.1: validated hyperparameters (optional — script defaults apply if absent)
+    learning_rate: float | None = Field(default=None, ge=1e-6, le=1e-2)
+    batch_size: int | None = Field(default=None, ge=1, le=64)
+    gradient_accumulation_steps: int | None = Field(default=None, ge=1, le=128)
+    lora_r: int | None = Field(default=None, ge=1, le=256)
+    lora_dropout: float | None = Field(default=None, ge=0.0, le=0.5)
 
 
 class StopTrainingRequest(BaseModel):

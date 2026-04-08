@@ -23,9 +23,14 @@ if it detects a stale-or-active PID file.
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 import os
 import re
+import subprocess
 import sys
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Resolve project root from this file's location (no hardcoded paths)
@@ -87,26 +92,167 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _setup_logger(log_path: Path) -> logging.Logger:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger("hime.train_with_resume")
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(handler)
+    return logger
+
+
+def _log_event(log_path: Path, event: str, **fields) -> None:
+    entry = {"ts": datetime.now(UTC).isoformat(), "event": event, **fields}
+    logger = _setup_logger(log_path)
+    logger.info(json.dumps(entry, ensure_ascii=False))
+
+
+def run_training_subprocess(cmd: list[str], log_path: Path) -> int:
+    """Run the underlying training script and return its exit code."""
+    _log_event(log_path, "subprocess_start", cmd=cmd)
+    proc = subprocess.run(cmd)  # noqa: S603
+    _log_event(log_path, "subprocess_exit", returncode=proc.returncode)
+    return proc.returncode
+
+
+def _read_curriculum_promotion_flag(state_path: Path | None) -> bool:
+    if state_path is None or not state_path.exists():
+        return False
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        return bool(data.get("should_promote_tier"))
+    except Exception:
+        return False
+
+
+def _clear_curriculum_promotion_flag(state_path: Path) -> None:
+    """Increment tier index and clear the flag."""
+    data = json.loads(state_path.read_text(encoding="utf-8"))
+    data["current_tier_index"] = int(data["current_tier_index"]) + 1
+    data["should_promote_tier"] = False
+    data["last_updated"] = datetime.now(UTC).isoformat()
+    state_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _rebuild_cmd_with_resume(base_cmd: list[str], newest_checkpoint: Path | None) -> list[str]:
+    """Strip any existing --resume_from_checkpoint and re-append the newest one."""
+    new_cmd: list[str] = []
+    skip_next = False
+    for tok in base_cmd:
+        if skip_next:
+            skip_next = False
+            continue
+        if tok == "--resume_from_checkpoint":
+            skip_next = True
+            continue
+        new_cmd.append(tok)
+    if newest_checkpoint is not None:
+        new_cmd += ["--resume_from_checkpoint", str(newest_checkpoint)]
+    return new_cmd
+
+
+def run_with_retries(
+    *,
+    cmd: list[str],
+    log_path: Path,
+    max_restarts: int,
+    checkpoint_dir: Path,
+    model_name: str,
+    model_key: str | None,
+    epochs: float,
+    curriculum_state_path: Path | None,
+) -> int:
+    """Run the training subprocess with crash retry. Returns the final exit code."""
+    consecutive_failures = 0
+    while True:
+        rc = run_training_subprocess(cmd, log_path)
+
+        if rc == 0:
+            if _read_curriculum_promotion_flag(curriculum_state_path):
+                if curriculum_state_path is not None:
+                    _clear_curriculum_promotion_flag(curriculum_state_path)
+                _log_event(log_path, "tier_promotion_handled", model=model_name)
+            return 0
+
+        consecutive_failures += 1
+        _log_event(
+            log_path, "subprocess_crash",
+            attempt=consecutive_failures, max_attempts=max_restarts, returncode=rc,
+        )
+        if consecutive_failures > max_restarts:
+            _log_event(log_path, "max_restarts_exceeded", model=model_name)
+            return rc
+
+        time.sleep(30)
+
+        newest = find_newest_valid_checkpoint(checkpoint_dir)
+        cmd = _rebuild_cmd_with_resume(base_cmd=cmd, newest_checkpoint=newest)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
-    # Resolve checkpoint dir without importing app.core.paths (this script may
-    # run in a conda env that doesn't have the backend installed)
     models_dir = Path(os.environ.get("HIME_MODELS_DIR", str(PROJECT_ROOT / "modelle")))
     checkpoint_dir = models_dir / "lora" / args.model_name / "checkpoint"
+    log_path = PROJECT_ROOT / "app" / "backend" / "logs" / "training" / "auto_resume.log"
+    curriculum_state_path = models_dir / "lora" / args.model_name / "curriculum_state.json"
 
     newest = find_newest_valid_checkpoint(checkpoint_dir)
-    if newest:
+
+    if args.model_key:
+        script = PROJECT_ROOT / "scripts" / "train_generic.py"
+        cmd = [
+            sys.executable, str(script),
+            "--model", args.model_key,
+            "--run-name", args.model_name,
+            "--epochs", str(args.epochs),
+        ]
+    else:
+        script = PROJECT_ROOT / "scripts" / "train_hime.py"
+        cmd = [
+            sys.executable, str(script),
+            "--num_train_epochs", str(args.epochs),
+        ]
+
+    if newest is not None:
+        cmd += ["--resume_from_checkpoint", str(newest)]
         print(f"[wrapper] Resuming from: {newest}")
+        _log_event(log_path, "resume_decided", checkpoint=str(newest), model=args.model_name)
     else:
         print(f"[wrapper] No valid checkpoint found in {checkpoint_dir}")
+        if not args.no_prompt:
+            print("[wrapper] Start training from scratch? [Y/n] (10s timeout, default N)")
+            try:
+                import select
+                if sys.platform == "win32":
+                    answer = input().strip().lower()
+                else:
+                    rlist, _, _ = select.select([sys.stdin], [], [], 10)
+                    answer = sys.stdin.readline().strip().lower() if rlist else "n"
+            except Exception:
+                answer = "n"
+            if answer not in {"y", "yes"}:
+                print("[wrapper] Aborting — no checkpoint and user did not confirm fresh start")
+                return 1
+        _log_event(log_path, "fresh_start", model=args.model_name)
 
     if args.dry_run:
         print("[wrapper] --dry-run set; exiting before launching training")
+        print("[wrapper] cmd:", " ".join(cmd))
         return 0
 
-    # Crash retry loop is implemented in Task 5
-    raise NotImplementedError("Retry loop is implemented in a follow-up task")
+    return run_with_retries(
+        cmd=cmd,
+        log_path=log_path,
+        max_restarts=args.max_restarts,
+        checkpoint_dir=checkpoint_dir,
+        model_name=args.model_name,
+        model_key=args.model_key,
+        epochs=args.epochs,
+        curriculum_state_path=curriculum_state_path,
+    )
 
 
 if __name__ == "__main__":

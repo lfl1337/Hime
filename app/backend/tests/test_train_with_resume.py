@@ -63,3 +63,86 @@ class TestFindNewestValidCheckpoint:
         (cp / "optimizer.pt").write_bytes(b"")
         (cp / "scheduler.pt").write_bytes(b"")
         assert twr.find_newest_valid_checkpoint(tmp_path) == cp
+
+
+class TestRetryLoop:
+    def test_zero_exit_returns_immediately(self, monkeypatch, tmp_path: Path):
+        calls = []
+        def fake_runner(cmd, log_path):
+            calls.append(cmd)
+            return 0
+        monkeypatch.setattr(twr, "run_training_subprocess", fake_runner)
+        rc = twr.run_with_retries(
+            cmd=["python", "fake.py"],
+            log_path=tmp_path / "auto_resume.log",
+            max_restarts=5,
+            checkpoint_dir=tmp_path / "checkpoints",
+            model_name="X",
+            model_key=None,
+            epochs=1.0,
+            curriculum_state_path=None,
+        )
+        assert rc == 0
+        assert len(calls) == 1
+
+    def test_retries_on_nonzero_exit(self, monkeypatch, tmp_path: Path):
+        attempts = {"n": 0}
+        def fake_runner(cmd, log_path):
+            attempts["n"] += 1
+            return 1 if attempts["n"] < 3 else 0
+        monkeypatch.setattr(twr, "run_training_subprocess", fake_runner)
+        monkeypatch.setattr(twr.time, "sleep", lambda _s: None)
+        rc = twr.run_with_retries(
+            cmd=["python", "fake.py"],
+            log_path=tmp_path / "auto_resume.log",
+            max_restarts=5,
+            checkpoint_dir=tmp_path / "checkpoints",
+            model_name="X",
+            model_key=None,
+            epochs=1.0,
+            curriculum_state_path=None,
+        )
+        assert rc == 0
+        assert attempts["n"] == 3
+
+    def test_aborts_after_max_restarts(self, monkeypatch, tmp_path: Path):
+        def fake_runner(cmd, log_path):
+            return 1
+        monkeypatch.setattr(twr, "run_training_subprocess", fake_runner)
+        monkeypatch.setattr(twr.time, "sleep", lambda _s: None)
+        rc = twr.run_with_retries(
+            cmd=["python", "fake.py"],
+            log_path=tmp_path / "auto_resume.log",
+            max_restarts=2,
+            checkpoint_dir=tmp_path / "checkpoints",
+            model_name="X",
+            model_key=None,
+            epochs=1.0,
+            curriculum_state_path=None,
+        )
+        assert rc == 1
+
+    def test_tier_promotion_does_not_count_as_crash(self, monkeypatch, tmp_path: Path):
+        cs_path = tmp_path / "curriculum_state.json"
+        cs_path.write_text(
+            '{"current_tier_index": 0, "current_tier_name": "strict", '
+            '"current_min_score": 0.7, "promotion_history": [], "eval_loss_window": [], '
+            '"last_updated": "2026-04-08T00:00:00+00:00", "should_promote_tier": true}'
+        )
+        attempts = {"n": 0}
+        def fake_runner(cmd, log_path):
+            attempts["n"] += 1
+            return 0
+        monkeypatch.setattr(twr, "run_training_subprocess", fake_runner)
+        rc = twr.run_with_retries(
+            cmd=["python", "fake.py"],
+            log_path=tmp_path / "auto_resume.log",
+            max_restarts=2,
+            checkpoint_dir=tmp_path / "checkpoints",
+            model_name="X",
+            model_key=None,
+            epochs=1.0,
+            curriculum_state_path=cs_path,
+        )
+        assert rc == 0
+        assert attempts["n"] == 1

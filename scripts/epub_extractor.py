@@ -4,6 +4,7 @@ Korrekte Furigana-Behandlung für Bookwalker/Kadokawa EPUBs.
 Serie: 声優ラジオのウラオモテ
 """
 
+import os
 import zipfile
 import json
 import re
@@ -12,7 +13,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 # ── Konfiguration ─────────────────────────────────────────────
-PROJECT_ROOT = Path(r"C:\Projekte\Hime")
+PROJECT_ROOT = Path(os.environ.get("HIME_PROJECT_ROOT") or Path(__file__).resolve().parent.parent)
 EPUB_DIR     = PROJECT_ROOT / "data" / "epubs"
 RAW_JP_DIR   = PROJECT_ROOT / "data" / "raw_jp"
 TRAINING_DIR = PROJECT_ROOT / "data" / "training"

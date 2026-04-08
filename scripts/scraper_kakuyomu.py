@@ -3,13 +3,13 @@ Hime - Kakuyomu Scraper v3
 Navigiert sequenziell durch alle Episoden via "nächste Episode" Links.
 """
 
-import json, time, re, zipfile
+import json, os, time, re, zipfile
 import requests
 from pathlib import Path
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
-PROJECT_ROOT = Path(r"C:\Projekte\Hime")
+PROJECT_ROOT = Path(os.environ.get("HIME_PROJECT_ROOT") or Path(__file__).resolve().parent.parent)
 RAW_JP_DIR   = PROJECT_ROOT / "data" / "raw_jp"
 RAW_EN_DIR   = PROJECT_ROOT / "data" / "raw_en"
 TRAINING_DIR = PROJECT_ROOT / "data" / "training"

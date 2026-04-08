@@ -16,7 +16,7 @@ from tqdm import tqdm
 import requests
 
 # ─── Konfiguration ────────────────────────────────────────────
-PROJECT_ROOT   = Path(r"C:\Projekte\Hime")
+PROJECT_ROOT   = Path(os.environ.get("HIME_PROJECT_ROOT") or Path(__file__).resolve().parent.parent)
 TRAINING_DIR   = PROJECT_ROOT / "data" / "training"
 ANALYSIS_DIR   = PROJECT_ROOT / "data" / "analysis"
 ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)

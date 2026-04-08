@@ -20,6 +20,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -27,7 +28,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path(r"C:\Projekte\Hime")
+PROJECT_ROOT = Path(os.environ.get("HIME_PROJECT_ROOT") or Path(__file__).resolve().parent.parent)
 MODELS_DIR   = PROJECT_ROOT / "modelle" / "lora"
 LOG_DIR      = PROJECT_ROOT / "app" / "backend" / "logs" / "training"
 

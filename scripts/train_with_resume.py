@@ -77,7 +77,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Crash-resilient training wrapper")
     parser.add_argument("--model-name", required=True)
     parser.add_argument("--model-key", default=None,
-                        choices=[None, "qwen32b", "qwen14b", "qwen72b", "gemma27b", "deepseek"])
+                        choices=["qwen32b", "qwen14b", "qwen72b", "gemma27b", "deepseek"])
     parser.add_argument("--epochs", type=float, default=1.5)
     parser.add_argument("--no-prompt", action="store_true",
                         help="Skip the 10s confirmation when no checkpoint is found")

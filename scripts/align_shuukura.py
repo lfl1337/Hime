@@ -8,12 +8,12 @@ Warum getrennt?
 - LN = Light Novel = andere Version, kein freies JP verfügbar ❌
 """
 
-import json, re, zipfile
+import json, os, re, zipfile
 from pathlib import Path
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
-PROJECT_ROOT = Path(r"C:\Projekte\Hime")
+PROJECT_ROOT = Path(os.environ.get("HIME_PROJECT_ROOT") or Path(__file__).resolve().parent.parent)
 RAW_JP_DIR   = PROJECT_ROOT / "data" / "raw_jp" / "ShuuKura"
 EPUB_DIR     = PROJECT_ROOT / "data" / "epubs"
 TRAINING_DIR = PROJECT_ROOT / "data" / "training"

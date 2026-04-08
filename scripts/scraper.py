@@ -5,6 +5,7 @@ von Baka-Tsuki herunter und erstellt Trainingspaare.
 """
 
 import json
+import os
 import time
 import requests
 from pathlib import Path
@@ -12,7 +13,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 # ── Konfiguration ─────────────────────────────────────────────
-PROJECT_ROOT = Path(r"C:\Projekte\Hime")
+PROJECT_ROOT = Path(os.environ.get("HIME_PROJECT_ROOT") or Path(__file__).resolve().parent.parent)
 RAW_JP_DIR   = PROJECT_ROOT / "data" / "raw_jp"
 RAW_EN_DIR   = PROJECT_ROOT / "data" / "raw_en"
 TRAINING_DIR = PROJECT_ROOT / "data" / "training"

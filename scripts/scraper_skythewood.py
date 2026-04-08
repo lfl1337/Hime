@@ -5,6 +5,7 @@ und pairt sie mit den bereits gescrapten JP Kapiteln von Syosetu.
 """
 
 import json
+import os
 import time
 import re
 import requests
@@ -13,7 +14,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 # ── Konfiguration ─────────────────────────────────────────────
-PROJECT_ROOT = Path(r"C:\Projekte\Hime")
+PROJECT_ROOT = Path(os.environ.get("HIME_PROJECT_ROOT") or Path(__file__).resolve().parent.parent)
 RAW_EN_DIR   = PROJECT_ROOT / "data" / "raw_en"
 RAW_JP_DIR   = PROJECT_ROOT / "data" / "raw_jp"
 TRAINING_DIR = PROJECT_ROOT / "data" / "training"

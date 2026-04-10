@@ -32,31 +32,6 @@ _MODEL_CACHE: dict[str, object] = {}
 _LOAD_LOCK = threading.Lock()
 
 
-class _UnslothStub:
-    """Placeholder used when unsloth is not installed.
-
-    from_pretrained raises a descriptive RuntimeError so callers get a clear
-    message rather than a silent mock that produces garbage output.
-    for_inference is a no-op to allow test patches to work without unsloth.
-    """
-
-    @staticmethod
-    def from_pretrained(*args, **kwargs):
-        raise RuntimeError(
-            "unsloth not installed; run: pip install 'unsloth[cu124-torch260]'"
-        )
-
-    @staticmethod
-    def for_inference(model):
-        pass
-
-
-try:
-    from unsloth import FastLanguageModel  # noqa: PLC0415
-except ImportError:
-    FastLanguageModel = _UnslothStub()  # type: ignore[assignment]
-
-
 def _model_path() -> str:
     if settings.hime_gemma4_path:
         return settings.hime_gemma4_path
@@ -65,6 +40,12 @@ def _model_path() -> str:
 
 def _load_model():
     """Load Gemma4 E4B GGUF into _MODEL_CACHE (idempotent, thread-safe)."""
+    try:
+        from unsloth import FastLanguageModel
+    except ImportError as exc:
+        raise RuntimeError(
+            "unsloth is not installed. Install it separately with CUDA support."
+        ) from exc
     if "model" in _MODEL_CACHE:
         return _MODEL_CACHE["model"], _MODEL_CACHE["tokenizer"]
     with _LOAD_LOCK:

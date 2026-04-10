@@ -46,3 +46,4 @@ def test_report_contains_sections(tmp_path, monkeypatch):
     assert "## HuggingFace Cache" in report
     assert "## Qwen2.5-32B Checkpoints" in report
     assert "## Gesamtverbrauch" in report
+    assert "## Lokale Modelle" in report

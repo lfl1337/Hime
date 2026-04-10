@@ -12,6 +12,8 @@ export interface BookSummary {
   total_paragraphs: number
   translated_paragraphs: number
   status: 'not_started' | 'in_progress' | 'complete'
+  series_id?: number | null
+  series_title?: string | null
 }
 
 export interface ChapterSummary {

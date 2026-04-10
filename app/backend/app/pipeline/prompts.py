@@ -85,9 +85,18 @@ _STAGE2_SYSTEM = _load_template("stage2_refine.txt", _STAGE2_FALLBACK)
 _STAGE3_SYSTEM = _load_template("stage3_polish.txt", _STAGE3_FALLBACK)
 
 
-def stage1_messages(source_text: str, notes: str = "") -> list[dict[str, str]]:
+def stage1_messages(
+    source_text: str,
+    notes: str = "",
+    glossary: str = "",
+    rag_context: str = "",
+    lexicon_anchor: str = "",
+) -> list[dict[str, str]]:
     """Messages for each Stage 1 translator model."""
     system = _STAGE1_SYSTEM
+    system = system.replace("{glossary}", glossary)
+    system = system.replace("{rag_context}", rag_context)
+    system = system.replace("{lexicon_anchor}", lexicon_anchor)
     if notes:
         system += f"\n\nAdditional translator notes: {notes}"
     return [

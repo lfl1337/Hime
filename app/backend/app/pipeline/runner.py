@@ -18,10 +18,12 @@ import time
 
 from sqlalchemy import select
 
+import logging as _logging
+
 from ..config import settings
 from ..database import AsyncSessionLocal
 from ..inference import stream_completion
-from ..models import Translation
+from ..models import Book, Translation
 from .prompts import (
     consensus_messages,
     stage1_messages,
@@ -75,6 +77,10 @@ async def _stream_stage(
 _CONFIDENCE_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 
+def _log_safe(msg: str, exc: BaseException) -> None:
+    _logging.getLogger(__name__).warning("[pipeline] %s: %s", msg, exc)
+
+
 def _parse_confidence_log(text: str) -> dict | None:
     """Extract the confidence JSON block from a consensus output."""
     if not text:
@@ -110,12 +116,51 @@ async def run_pipeline(
     source_text: str,
     notes: str,
     ws_queue: asyncio.Queue,
+    book_id: int | None = None,
 ) -> None:
     """
     Full pipeline coroutine.  Designed to run as an asyncio.Task so that a
     WebSocket disconnect does not abort in-flight inference calls.
     """
     started_at = time.monotonic()
+    glossary_block = ""
+    rag_context_block = ""
+    lexicon_anchor_block = ""
+
+    # ------------------------------------------------------------------ #
+    # v1.2.1 enrichment — glossary, RAG context, lexicon anchor           #
+    # All fetches are best-effort; failure → empty string (no crash)      #
+    # ------------------------------------------------------------------ #
+    if book_id is not None:
+        try:
+            from ..services.glossary_service import GlossaryService
+            async with AsyncSessionLocal() as session:
+                svc = GlossaryService(session)
+                g = await svc.get_or_create_for_book(book_id)
+                glossary_block = await svc.format_for_prompt(g.id, source_text)
+        except Exception as exc:  # noqa: BLE001
+            _log_safe("glossary fetch failed", exc)
+
+        try:
+            from ..rag.retriever import format_rag_context, retrieve_top_k
+            async with AsyncSessionLocal() as session:
+                book = await session.get(Book, book_id)
+            if book is not None and book.series_id is not None:
+                chunks = await retrieve_top_k(book.series_id, source_text, top_k=5)
+                rag_context_block = format_rag_context(chunks)
+        except Exception as exc:  # noqa: BLE001
+            _log_safe("rag retrieval failed", exc)
+
+    try:
+        from ..services.lexicon_service import LexiconService
+        lex = LexiconService().translate(source_text)
+        if lex.literal_translation:
+            lexicon_anchor_block = (
+                "Literal lexicon reference (from JMdict — for completeness check only):\n"
+                + lex.literal_translation
+            )
+    except Exception as exc:  # noqa: BLE001
+        _log_safe("lexicon translate failed", exc)
 
     try:
         # ------------------------------------------------------------------ #
@@ -124,7 +169,12 @@ async def run_pipeline(
         await ws_queue.put({"event": "stage1_start", "models": ["gemma", "deepseek", "qwen32b"]})
         await _checkpoint(job_id, current_stage="stage1")
 
-        msgs = stage1_messages(source_text, notes)
+        msgs = stage1_messages(
+            source_text, notes,
+            glossary=glossary_block,
+            rag_context=rag_context_block,
+            lexicon_anchor=lexicon_anchor_block,
+        )
         results = await asyncio.gather(
             _stream_stage1("gemma",    settings.hime_gemma_url,    settings.hime_gemma_model,    msgs, ws_queue),
             _stream_stage1("deepseek", settings.hime_deepseek_url, settings.hime_deepseek_model, msgs, ws_queue),

@@ -31,6 +31,7 @@ TRAINING_DATA_DIR = Path(os.environ.get("HIME_TRAINING_DATA_DIR", str(DATA_DIR /
 SCRIPTS_DIR = Path(os.environ.get("HIME_SCRIPTS_DIR", str(PROJECT_ROOT / "scripts")))
 EMBEDDINGS_DIR = Path(os.environ.get("HIME_EMBEDDINGS_DIR", str(MODELS_DIR / "embeddings")))
 RAG_DIR = Path(os.environ.get("HIME_RAG_DIR", str(DATA_DIR / "rag")))
+OBSIDIAN_VAULT_DIR = Path(os.environ.get("HIME_OBSIDIAN_VAULT_DIR", str(PROJECT_ROOT / "obsidian-vault")))
 TRAINING_LOG_DIR = LOGS_DIR / "training"
 
 

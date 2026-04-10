@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     hime_reader_emotion_url: str = ""
     hime_reader_yuri_url: str = ""
 
+    # v1.2.1 — Embeddings + RAG
+    hime_embeddings_dir: str = ""   # blank → resolved from paths.EMBEDDINGS_DIR at runtime
+    hime_rag_dir: str = ""          # blank → resolved from paths.RAG_DIR at runtime
+    hime_allow_downloads: bool = False  # gates the model download endpoint
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",

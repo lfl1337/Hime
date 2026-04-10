@@ -121,6 +121,15 @@ export async function createWebSocket(jobId: number): Promise<WebSocket> {
   return new WebSocket(`ws://${DEFAULT_BACKEND_HOST}:${port}/ws/translate/${jobId}`)
 }
 
+export async function createBookPipelineWebSocket(bookId: number): Promise<WebSocket> {
+  if (import.meta.env.DEV) {
+    const wsOrigin = window.location.origin.replace(/^http/, 'ws')
+    return new WebSocket(`${wsOrigin}/api/v1/pipeline/${bookId}/translate`)
+  }
+  const port = await getPort()
+  return new WebSocket(`ws://${DEFAULT_BACKEND_HOST}:${port}/api/v1/pipeline/${bookId}/translate`)
+}
+
 export async function getHealthInfo(): Promise<{ status: string; app: string; version: string }> {
   const res = await apiFetch('/health')
   if (!res.ok) throw new Error('health check failed')

@@ -77,3 +77,4 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 data/analysis/*.jsonl 
+.worktrees/

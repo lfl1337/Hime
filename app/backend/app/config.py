@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     hime_qwen32b_url: str = "http://127.0.0.1:8003/v1"
     hime_qwen32b_model: str = "hime-qwen32b"
 
+    # Pipeline Stage 1 v2 — local Unsloth model paths (relative to MODELS_DIR by default)
+    # Override via .env: HIME_TRANSLATEGEMMA_PATH=/absolute/path/to/model
+    # NOTE: unsloth requires separate install: pip install "unsloth[cu124-torch260]"
+    hime_translategemma_path: str = ""   # resolved at runtime → MODELS_DIR/translategemma-12b
+    hime_qwen35_9b_path: str = ""        # resolved at runtime → MODELS_DIR/qwen3.5-9b
+    hime_gemma4_path: str = ""           # resolved at runtime → MODELS_DIR/gemma4-e4b
+
     # Pipeline Consensus — merger model (defaults to qwen32b slot)
     hime_merger_url: str = "http://127.0.0.1:8003/v1"
     hime_merger_model: str = "hime-qwen32b"

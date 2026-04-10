@@ -3,10 +3,6 @@
 Run from: N:/Projekte/NiN/Hime/.worktrees/pipeline-v2/app/backend/
 Command:  uv run pytest tests/test_preprocessor_v2.py -v
 """
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import pytest
 from dataclasses import fields as dc_fields
 from unittest.mock import AsyncMock, MagicMock, patch

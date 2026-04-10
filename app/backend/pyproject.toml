@@ -37,6 +37,11 @@ dev = [
 downloads = [
     "huggingface_hub>=0.24.0",
 ]
+vault = [
+    "python-frontmatter>=1.1.0",
+    "scikit-learn>=1.4.0",
+    "transformers>=5.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
+from ..middleware.rate_limit import limiter
 from ..pipeline.preprocessor import preprocess_book
 
 _log = logging.getLogger(__name__)
@@ -36,7 +37,9 @@ class PreprocessResponse(BaseModel):
 
 
 @router.post("/{book_id}/preprocess", response_model=PreprocessResponse)
+@limiter.limit("5/minute")
 async def trigger_preprocess(
+    request: Request,
     book_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> PreprocessResponse:

@@ -39,7 +39,7 @@ class SettingRequest(BaseModel):
 
 
 class BookUpdateRequest(BaseModel):
-    series_id: int | None = None
+    series_id: int | None = Field(default=None, ge=1)
     series_title: str | None = Field(default=None, max_length=512)
 
 
@@ -137,7 +137,9 @@ async def api_rescan_book(
 
 
 @router.patch("/books/{book_id}", status_code=status.HTTP_200_OK)
+@limiter.limit("10/minute")
 async def api_update_book(
+    request: Request,
     book_id: int,
     body: BookUpdateRequest,
     session: AsyncSession = Depends(get_session),

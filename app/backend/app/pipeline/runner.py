@@ -82,17 +82,26 @@ def _parse_confidence_log(text: str) -> dict | None:
 
 
 async def _checkpoint(job_id: int, **fields) -> None:
-    """Write arbitrary column updates to a Translation row."""
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Translation).where(Translation.id == job_id)
+    """Write arbitrary column updates to a Translation row.
+
+    Non-fatal: any DB error is logged as a warning and swallowed so that a
+    checkpoint failure never aborts the pipeline.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Translation).where(Translation.id == job_id)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                return
+            for k, v in fields.items():
+                setattr(row, k, v)
+            await session.commit()
+    except Exception as exc:
+        _logging.getLogger(__name__).warning(
+            "checkpoint write failed for job %s: %s", job_id, exc
         )
-        row = result.scalar_one_or_none()
-        if row is None:
-            return
-        for k, v in fields.items():
-            setattr(row, k, v)
-        await session.commit()
 
 
 def _drafts_to_stage1_outputs(drafts: Stage1Drafts) -> dict[str, str]:
@@ -110,8 +119,7 @@ def _drafts_to_stage1_outputs(drafts: Stage1Drafts) -> dict[str, str]:
         out["qwen35_9b"] = drafts.qwen35_9b
     if drafts.gemma4_e4b:
         out["gemma4_e4b"] = drafts.gemma4_e4b
-    if drafts.jmdict:
-        out["jmdict"] = drafts.jmdict
+    out["jmdict"] = drafts.jmdict  # always include, even if empty
     return out
 
 
@@ -167,6 +175,7 @@ async def run_pipeline(
             segment=source_text,
             rag_context=rag_context_block,
             glossary_context=glossary_block,
+            notes=notes,
         )
 
         stage1_outputs = _drafts_to_stage1_outputs(drafts)

@@ -125,6 +125,7 @@ async def run_stage1(
     segment: str,
     rag_context: str,
     glossary_context: str,
+    notes: str = "",
 ) -> Stage1Drafts:
     """
     Run all Stage 1 adapters and return a Stage1Drafts dataclass.
@@ -136,7 +137,7 @@ async def run_stage1(
 
     # 1A + 1B/1C/1D in parallel (Ollama is independent of local VRAM)
     qwen32b_coro = adapter_qwen32b.translate(
-        segment, rag_context=rag_context, glossary_context=glossary_context
+        segment, rag_context=rag_context, glossary_context=glossary_context, notes=notes
     )
     local_coro = _run_local_adapters_parallel(segment, rag_context, glossary_context)
 

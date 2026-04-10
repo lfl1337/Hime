@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from pathlib import Path
 
 from ...config import settings
@@ -29,15 +30,32 @@ _log = logging.getLogger(__name__)
 # Module-level cache — keys: "model", "tokenizer"
 # Using a dict so tests can call .clear() to reset state between test runs.
 _MODEL_CACHE: dict[str, object] = {}
+_LOAD_LOCK = threading.Lock()
 
-# FastLanguageModel is imported lazily to avoid loading unsloth at import time.
-# It is set as a module attribute on first use so that unittest.mock.patch can
-# target "app.pipeline.stage1.adapter_translategemma.FastLanguageModel".
+
+class _UnslothStub:
+    """Placeholder used when unsloth is not installed.
+
+    from_pretrained raises a descriptive RuntimeError so callers get a clear
+    message rather than a silent mock that produces garbage output.
+    for_inference is a no-op to allow test patches to work without unsloth.
+    """
+
+    @staticmethod
+    def from_pretrained(*args, **kwargs):
+        raise RuntimeError(
+            "unsloth not installed; run: pip install 'unsloth[cu124-torch260]'"
+        )
+
+    @staticmethod
+    def for_inference(model):
+        pass
+
+
 try:
     from unsloth import FastLanguageModel  # noqa: PLC0415
-except ImportError:  # unsloth not installed in test/dev environments
-    from unittest.mock import MagicMock as _MagicMock
-    FastLanguageModel = _MagicMock()  # type: ignore[assignment]
+except ImportError:
+    FastLanguageModel = _UnslothStub()  # type: ignore[assignment]
 
 
 def _model_path() -> str:
@@ -47,22 +65,25 @@ def _model_path() -> str:
 
 
 def _load_model():
-    """Load TranslateGemma-12B into _MODEL_CACHE (idempotent)."""
+    """Load TranslateGemma-12B into _MODEL_CACHE (idempotent, thread-safe)."""
     if "model" in _MODEL_CACHE:
         return _MODEL_CACHE["model"], _MODEL_CACHE["tokenizer"]
+    with _LOAD_LOCK:
+        if "model" in _MODEL_CACHE:  # double-check after acquiring lock
+            return _MODEL_CACHE["model"], _MODEL_CACHE["tokenizer"]
 
-    path = _model_path()
-    _log.info("Loading TranslateGemma-12B from %s", path)
-    model, tokenizer = FastLanguageModel.from_pretrained(  # type: ignore[union-attr]
-        model_name=path,
-        max_seq_length=4096,
-        load_in_4bit=True,
-    )
-    FastLanguageModel.for_inference(model)
-    _MODEL_CACHE["model"] = model
-    _MODEL_CACHE["tokenizer"] = tokenizer
-    _log.info("TranslateGemma-12B loaded.")
-    return model, tokenizer
+        path = _model_path()
+        _log.info("Loading TranslateGemma-12B from %s", path)
+        model, tokenizer = FastLanguageModel.from_pretrained(  # type: ignore[union-attr]
+            model_name=path,
+            max_seq_length=4096,
+            load_in_4bit=True,
+        )
+        FastLanguageModel.for_inference(model)
+        _MODEL_CACHE["model"] = model
+        _MODEL_CACHE["tokenizer"] = tokenizer
+        _log.info("TranslateGemma-12B loaded.")
+        return model, tokenizer
 
 
 def _run_inference(source_jp: str, rag_context: str, glossary_context: str) -> str:

@@ -374,7 +374,7 @@ export function TranslationWorkspace({ book, chapter }: Props) {
           </div>
         </div>
         {book && (
-          <>
+          <div className="flex flex-col overflow-y-auto shrink-0">
             <BookDetails
               book_id={book.id}
               series_id={book.series_id ?? null}
@@ -391,7 +391,7 @@ export function TranslationWorkspace({ book, chapter }: Props) {
               sample_translation={currentParagraph?.translated_text ?? undefined}
             />
             <BookPipelinePanel book={book} />
-          </>
+          </div>
         )}
       </div>
     </div>

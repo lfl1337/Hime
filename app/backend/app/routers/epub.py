@@ -124,7 +124,9 @@ async def api_export_chapter(
 
 
 @router.post("/books/{book_id}/rescan", status_code=status.HTTP_200_OK)
+@limiter.limit("2/minute")
 async def api_rescan_book(
+    request: Request,
     book_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> dict:

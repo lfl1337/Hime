@@ -1,5 +1,5 @@
 // app/frontend/src/api/useBookPipelineV2.ts
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createBookPipelineWebSocket } from './client'
 import type { BookPipelineState, PipelineV2Event, SegmentProgress } from './pipeline_v2'
 import { INITIAL_PIPELINE_STATE } from './pipeline_v2'
@@ -13,6 +13,13 @@ export interface UseBookPipelineV2Return {
 export function useBookPipelineV2(): UseBookPipelineV2Return {
   const [state, setState] = useState<BookPipelineState>(INITIAL_PIPELINE_STATE)
   const wsRef = useRef<WebSocket | null>(null)
+
+  useEffect(() => {
+    return () => {
+      wsRef.current?.close()
+      wsRef.current = null
+    }
+  }, [])
 
   const reset = useCallback(() => {
     wsRef.current?.close()

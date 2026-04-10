@@ -36,7 +36,7 @@ MODELS: list[dict] = [
     },
     {
         "key": "qwen3-9b",
-        "hf_id": "Qwen/Qwen3-9B",
+        "hf_id": "Qwen/Qwen3.5-9B",
         "description": "Stage 1C — Diversitäts-Draft",
         "size_gb": 18,
         "method": "unsloth",

@@ -69,6 +69,15 @@ class Settings(BaseSettings):
     hime_qwen14b_url: str = "http://127.0.0.1:8005/v1"
     hime_qwen14b_model: str = "hime-qwen14b"
 
+    # Reader/Critic Panel — 6 persona reviewers (all default to qwen14b slot)
+    hime_reader_model: str = "hime-qwen14b"
+    hime_reader_names_url: str = ""
+    hime_reader_register_url: str = ""
+    hime_reader_omissions_url: str = ""
+    hime_reader_flow_url: str = ""
+    hime_reader_emotion_url: str = ""
+    hime_reader_yuri_url: str = ""
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",

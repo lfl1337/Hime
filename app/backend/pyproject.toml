@@ -27,6 +27,8 @@ dependencies = [
     # transformers required for Unsloth local inference (Stage 1B/1C/1D)
     # unsloth requires separate install: pip install "unsloth[cu124-torch260]"
     "transformers>=5.0.0",
+    # huggingface_hub: model download / cache helpers for Stage 4 pipeline
+    "huggingface_hub>=0.24.0",
     "mcp>=1.0.0",
 ]
 

@@ -11,6 +11,7 @@ import { ModelStatusDashboard } from '@/components/ModelStatusDashboard'
 import { PipelineExplanation } from '@/components/PipelineExplanation'
 import { ReaderPanelView } from '@/components/ReaderPanelView'
 import { BookDetails } from '@/components/BookDetails'
+import { BookPipelinePanel } from '@/components/BookPipelinePanel'
 
 interface Props {
   book: BookSummary | null
@@ -373,21 +374,24 @@ export function TranslationWorkspace({ book, chapter }: Props) {
           </div>
         </div>
         {book && (
-          <BookDetails
-            book_id={book.id}
-            series_id={book.series_id ?? null}
-            series_title={book.series_title ?? null}
-            onSeriesChange={async (id, title) => {
-              if (!book) return
-              try {
-                await updateBookSeries(book.id, id, title)
-              } catch (e) {
-                console.error('Failed to save series:', e)
-              }
-            }}
-            sample_source={currentParagraph?.source_text}
-            sample_translation={currentParagraph?.translated_text ?? undefined}
-          />
+          <>
+            <BookDetails
+              book_id={book.id}
+              series_id={book.series_id ?? null}
+              series_title={book.series_title ?? null}
+              onSeriesChange={async (id, title) => {
+                if (!book) return
+                try {
+                  await updateBookSeries(book.id, id, title)
+                } catch (e) {
+                  console.error('Failed to save series:', e)
+                }
+              }}
+              sample_source={currentParagraph?.source_text}
+              sample_translation={currentParagraph?.translated_text ?? undefined}
+            />
+            <BookPipelinePanel book={book} />
+          </>
         )}
       </div>
     </div>

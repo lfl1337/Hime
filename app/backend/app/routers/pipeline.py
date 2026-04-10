@@ -1,21 +1,26 @@
 """
-Pipeline v2 — Pre-Processing endpoint.
+Pipeline v2 endpoints.
 
 POST /api/v1/pipeline/{book_id}/preprocess
   Triggers WS-A pre-processing for the given book.
-  Returns segment count and a sample of the first 3 segments for inspection.
+
+WS   /ws/pipeline/{book_id}/translate
+  Full book-level v2 translation via run_pipeline_v2.
+  Emits structured JSON events; closes with None sentinel.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
 from ..middleware.rate_limit import limiter
 from ..pipeline.preprocessor import preprocess_book
+from ..pipeline.runner_v2 import run_pipeline_v2
 
 _log = logging.getLogger(__name__)
 
@@ -74,3 +79,68 @@ async def trigger_preprocess(
         segment_count=len(segments),
         sample=sample,
     )
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — full book translation (Pipeline v2)
+# ---------------------------------------------------------------------------
+
+# Tracks in-flight v2 jobs keyed by book_id to prevent double-spawning
+_active_v2: dict[int, asyncio.Task] = {}
+
+
+@router.websocket("/{book_id}/translate")
+async def ws_translate_book(
+    book_id: int,
+    websocket: WebSocket,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """
+    Stream a full-book Pipeline v2 translation.
+
+    Connect:  ws://127.0.0.1:18420/api/v1/pipeline/{book_id}/translate
+    Events:   JSON objects per runner_v2 contract (see runner_v2.py docstring)
+    Closes:   server sends close after pipeline_complete or pipeline_error
+    """
+    await websocket.accept()
+
+    if book_id in _active_v2 and not _active_v2[book_id].done():
+        await websocket.send_json({
+            "event": "pipeline_error",
+            "detail": f"Book {book_id} is already being translated.",
+        })
+        await websocket.close()
+        return
+
+    ws_queue: asyncio.Queue = asyncio.Queue()
+
+    task = asyncio.create_task(run_pipeline_v2(book_id, ws_queue, session))
+    _active_v2[book_id] = task
+
+    try:
+        while True:
+            try:
+                event = await asyncio.wait_for(ws_queue.get(), timeout=300.0)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"event": "pipeline_error", "detail": "Timeout waiting for pipeline event."})
+                task.cancel()
+                break
+
+            if event is None:
+                # Sentinel — pipeline finished
+                break
+
+            try:
+                await websocket.send_json(event)
+            except WebSocketDisconnect:
+                _log.info("[pipeline-ws] Client disconnected for book %d — pipeline task continues.", book_id)
+                break
+
+    except WebSocketDisconnect:
+        _log.info("[pipeline-ws] WebSocket disconnect for book %d.", book_id)
+    finally:
+        _active_v2.pop(book_id, None)
+        try:
+            await websocket.close()
+        except Exception:
+            pass

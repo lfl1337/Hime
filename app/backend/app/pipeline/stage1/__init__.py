@@ -8,6 +8,7 @@ Usage:
         segment="猫が走る。",
         rag_context="",
         glossary_context="",
+        notes="",
     )
     print(drafts.qwen32b)   # "The cat runs."  (or None if adapter failed)
     print(drafts.jmdict)    # "cat run ."      (always a str)

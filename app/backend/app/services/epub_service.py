@@ -429,6 +429,23 @@ async def export_chapter(chapter_id: int, fmt: str, session: AsyncSession) -> st
     return "\n\n".join(lines)
 
 
+async def update_book_series(
+    book_id: int,
+    series_id: int | None,
+    series_title: str | None,
+    session: AsyncSession,
+) -> dict | None:
+    """Update series_id and series_title for a book. Returns None if not found."""
+    book = await session.get(Book, book_id)
+    if book is None:
+        return None
+    book.series_id = series_id
+    book.series_title = series_title
+    await session.commit()
+    await session.refresh(book)
+    return _book_to_dict(book)
+
+
 async def get_setting(key: str, session: AsyncSession) -> str | None:
     setting = await session.get(Setting, key)
     return setting.value if setting else None
@@ -464,6 +481,8 @@ def _book_to_dict(book: Book) -> dict:
         "total_paragraphs": book.total_paragraphs,
         "translated_paragraphs": book.translated_paragraphs,
         "status": book.status,
+        "series_id": book.series_id,
+        "series_title": book.series_title,
     }
 
 

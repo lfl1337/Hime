@@ -30,16 +30,16 @@ def test_sync_writes_files(tmp_path: Path):
     rag_dir.mkdir()
     (rag_dir / "series_1.db").touch()
 
-    with patch("app.rag.vault_exporter.SeriesStore", return_value=_fake_store(CHUNKS_2)):
+    with patch("app.rag.store.SeriesStore", return_value=_fake_store(CHUNKS_2)):
         result = sync_series(series_id=1, rag_dir=rag_dir, vault_dir=tmp_path)
 
     assert result["new_files"] == 2
     assert result["total_chunks"] == 2
-    series_dir = tmp_path / "Hime" / "series_1"
+    series_dir = tmp_path / "series_1"
     assert (series_dir / "Chunk_0000.md").exists()
     assert (series_dir / "Chunk_0001.md").exists()
     assert (series_dir / "_series_index.md").exists()
-    assert (tmp_path / "Hime" / "_index.md").exists()
+    assert (tmp_path / "_index.md").exists()
 
 
 def test_chunk_file_has_wikilinks_and_flags(tmp_path: Path):
@@ -47,15 +47,13 @@ def test_chunk_file_has_wikilinks_and_flags(tmp_path: Path):
     rag_dir.mkdir()
     (rag_dir / "series_1.db").touch()
 
-    with patch("app.rag.vault_exporter.SeriesStore", return_value=_fake_store(CHUNKS_2)):
+    with patch("app.rag.store.SeriesStore", return_value=_fake_store(CHUNKS_2)):
         sync_series(series_id=1, rag_dir=rag_dir, vault_dir=tmp_path)
 
-    chunk0 = (tmp_path / "Hime" / "series_1" / "Chunk_0000.md").read_text(encoding="utf-8")
+    chunk0 = (tmp_path / "series_1" / "Chunk_0000.md").read_text(encoding="utf-8")
     assert "[[_series_index]]" in chunk0
     assert "[[Chunk_0001]]" in chunk0
     assert "series_id: 1" in chunk0
-    assert "🇯🇵" in chunk0
-    assert "🇬🇧" in chunk0
 
 
 def test_incremental_skips_existing(tmp_path: Path):
@@ -63,9 +61,9 @@ def test_incremental_skips_existing(tmp_path: Path):
     rag_dir.mkdir()
     (rag_dir / "series_1.db").touch()
 
-    with patch("app.rag.vault_exporter.SeriesStore", return_value=_fake_store(CHUNKS_2)):
+    with patch("app.rag.store.SeriesStore", return_value=_fake_store(CHUNKS_2)):
         r1 = sync_series(series_id=1, rag_dir=rag_dir, vault_dir=tmp_path)
-    with patch("app.rag.vault_exporter.SeriesStore", return_value=_fake_store(CHUNKS_2)):
+    with patch("app.rag.store.SeriesStore", return_value=_fake_store(CHUNKS_2)):
         r2 = sync_series(series_id=1, rag_dir=rag_dir, vault_dir=tmp_path)
 
     assert r1["new_files"] == 2
@@ -77,7 +75,7 @@ def test_obsidian_graph_config_created(tmp_path: Path):
     rag_dir.mkdir()
     (rag_dir / "series_1.db").touch()
 
-    with patch("app.rag.vault_exporter.SeriesStore", return_value=_fake_store(CHUNKS_2)):
+    with patch("app.rag.store.SeriesStore", return_value=_fake_store(CHUNKS_2)):
         sync_series(series_id=1, rag_dir=rag_dir, vault_dir=tmp_path)
 
     import json

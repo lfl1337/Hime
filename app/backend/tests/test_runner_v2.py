@@ -63,7 +63,13 @@ async def seeded_book(async_session):
 
 
 def _make_segment(paragraph_id: int, text: str = "彼女は微笑んだ。"):
-    return SimpleNamespace(paragraph_id=paragraph_id, source_text=text)
+    return SimpleNamespace(
+        paragraph_id=paragraph_id,
+        source_jp=text,
+        source_text=text,  # kept for compatibility
+        rag_context="",
+        glossary_context="",
+    )
 
 
 def _make_verdict(verdict: str, retry_instruction: str = "Fix tone.", confidence: dict | None = None):
@@ -95,8 +101,8 @@ async def test_preprocess_complete_event(seeded_book, async_session):
         patch("app.pipeline.runner_v2._stage1") as mock_s1,
         patch("app.pipeline.runner_v2._stage2") as mock_s2,
         patch("app.pipeline.runner_v2._stage3") as mock_s3,
-        patch("app.pipeline.runner_v2._stage4_reader") as mock_s4r,
-        patch("app.pipeline.runner_v2._stage4_agg") as mock_s4a,
+        patch("app.pipeline.runner_v2.Stage4Reader") as MockReader,
+        patch("app.pipeline.runner_v2.Stage4Aggregator") as MockAgg,
         patch("app.pipeline.runner_v2.export_book", new_callable=AsyncMock) as mock_export,
         patch("app.pipeline.runner_v2._checkpoint_segment", new_callable=AsyncMock),
     ):
@@ -104,8 +110,16 @@ async def test_preprocess_complete_event(seeded_book, async_session):
         mock_s1.run_stage1 = AsyncMock(return_value=MagicMock())
         mock_s2.merge = AsyncMock(return_value="merged text")
         mock_s3.polish = AsyncMock(return_value="polished text")
-        mock_s4r.review = AsyncMock(return_value=[MagicMock()])
-        mock_s4a.aggregate = AsyncMock(return_value=fake_verdict)
+        mock_reader_instance = MagicMock()
+        mock_reader_instance.review = AsyncMock(return_value=[MagicMock(sentence_id=0)])
+        mock_reader_instance.load = MagicMock()
+        mock_reader_instance.unload = MagicMock()
+        MockReader.return_value = mock_reader_instance
+        mock_agg_instance = MagicMock()
+        mock_agg_instance.aggregate = AsyncMock(return_value=fake_verdict)
+        mock_agg_instance.load = MagicMock()
+        mock_agg_instance.unload = MagicMock()
+        MockAgg.return_value = mock_agg_instance
         mock_export.return_value = Path("/fake/exports/1_translated.epub")
 
         from app.pipeline.runner_v2 import run_pipeline_v2
@@ -135,8 +149,8 @@ async def test_retry_loop_repolished_twice(seeded_book, async_session):
         patch("app.pipeline.runner_v2._stage1") as mock_s1,
         patch("app.pipeline.runner_v2._stage2") as mock_s2,
         patch("app.pipeline.runner_v2._stage3") as mock_s3,
-        patch("app.pipeline.runner_v2._stage4_reader") as mock_s4r,
-        patch("app.pipeline.runner_v2._stage4_agg") as mock_s4a,
+        patch("app.pipeline.runner_v2.Stage4Reader") as MockReader,
+        patch("app.pipeline.runner_v2.Stage4Aggregator") as MockAgg,
         patch("app.pipeline.runner_v2.export_book", new_callable=AsyncMock) as mock_export,
         patch("app.pipeline.runner_v2._checkpoint_segment", new_callable=AsyncMock),
     ):
@@ -144,8 +158,16 @@ async def test_retry_loop_repolished_twice(seeded_book, async_session):
         mock_s1.run_stage1 = AsyncMock(return_value=MagicMock())
         mock_s2.merge = AsyncMock(return_value="merged text")
         mock_s3.polish = AsyncMock(side_effect=["polished v1", "polished v2", "polished v3"])
-        mock_s4r.review = AsyncMock(return_value=[MagicMock()])
-        mock_s4a.aggregate = AsyncMock(side_effect=lambda _anns: next(verdict_iter))
+        mock_reader_instance = MagicMock()
+        mock_reader_instance.review = AsyncMock(return_value=[MagicMock(sentence_id=0)])
+        mock_reader_instance.load = MagicMock()
+        mock_reader_instance.unload = MagicMock()
+        MockReader.return_value = mock_reader_instance
+        mock_agg_instance = MagicMock()
+        mock_agg_instance.aggregate = AsyncMock(side_effect=lambda _anns: next(verdict_iter))
+        mock_agg_instance.load = MagicMock()
+        mock_agg_instance.unload = MagicMock()
+        MockAgg.return_value = mock_agg_instance
         mock_export.return_value = Path("/fake/exports/1_translated.epub")
 
         from app.pipeline.runner_v2 import run_pipeline_v2
@@ -174,8 +196,8 @@ async def test_retry_cap_accepts_after_3(seeded_book, async_session):
         patch("app.pipeline.runner_v2._stage1") as mock_s1,
         patch("app.pipeline.runner_v2._stage2") as mock_s2,
         patch("app.pipeline.runner_v2._stage3") as mock_s3,
-        patch("app.pipeline.runner_v2._stage4_reader") as mock_s4r,
-        patch("app.pipeline.runner_v2._stage4_agg") as mock_s4a,
+        patch("app.pipeline.runner_v2.Stage4Reader") as MockReader,
+        patch("app.pipeline.runner_v2.Stage4Aggregator") as MockAgg,
         patch("app.pipeline.runner_v2.export_book", new_callable=AsyncMock) as mock_export,
         patch("app.pipeline.runner_v2._checkpoint_segment", new_callable=AsyncMock),
     ):
@@ -183,8 +205,16 @@ async def test_retry_cap_accepts_after_3(seeded_book, async_session):
         mock_s1.run_stage1 = AsyncMock(return_value=MagicMock())
         mock_s2.merge = AsyncMock(return_value="merged text")
         mock_s3.polish = AsyncMock(side_effect=counting_polish)
-        mock_s4r.review = AsyncMock(return_value=[MagicMock()])
-        mock_s4a.aggregate = AsyncMock(return_value=always_retry)
+        mock_reader_instance = MagicMock()
+        mock_reader_instance.review = AsyncMock(return_value=[MagicMock(sentence_id=0)])
+        mock_reader_instance.load = MagicMock()
+        mock_reader_instance.unload = MagicMock()
+        MockReader.return_value = mock_reader_instance
+        mock_agg_instance = MagicMock()
+        mock_agg_instance.aggregate = AsyncMock(return_value=always_retry)
+        mock_agg_instance.load = MagicMock()
+        mock_agg_instance.unload = MagicMock()
+        MockAgg.return_value = mock_agg_instance
         mock_export.return_value = Path("/fake/exports/1_translated.epub")
 
         from app.pipeline.runner_v2 import run_pipeline_v2
@@ -218,8 +248,8 @@ async def test_db_checkpoint_written(seeded_book, async_session):
         patch("app.pipeline.runner_v2._stage1") as mock_s1,
         patch("app.pipeline.runner_v2._stage2") as mock_s2,
         patch("app.pipeline.runner_v2._stage3") as mock_s3,
-        patch("app.pipeline.runner_v2._stage4_reader") as mock_s4r,
-        patch("app.pipeline.runner_v2._stage4_agg") as mock_s4a,
+        patch("app.pipeline.runner_v2.Stage4Reader") as MockReader,
+        patch("app.pipeline.runner_v2.Stage4Aggregator") as MockAgg,
         patch("app.pipeline.runner_v2.export_book", new_callable=AsyncMock) as mock_export,
         patch("app.pipeline.runner_v2._checkpoint_segment", side_effect=fake_checkpoint),
     ):
@@ -227,8 +257,16 @@ async def test_db_checkpoint_written(seeded_book, async_session):
         mock_s1.run_stage1 = AsyncMock(return_value=MagicMock())
         mock_s2.merge = AsyncMock(return_value="merged text")
         mock_s3.polish = AsyncMock(return_value="polished text")
-        mock_s4r.review = AsyncMock(return_value=[MagicMock()])
-        mock_s4a.aggregate = AsyncMock(return_value=fake_verdict)
+        mock_reader_instance = MagicMock()
+        mock_reader_instance.review = AsyncMock(return_value=[MagicMock(sentence_id=0)])
+        mock_reader_instance.load = MagicMock()
+        mock_reader_instance.unload = MagicMock()
+        MockReader.return_value = mock_reader_instance
+        mock_agg_instance = MagicMock()
+        mock_agg_instance.aggregate = AsyncMock(return_value=fake_verdict)
+        mock_agg_instance.load = MagicMock()
+        mock_agg_instance.unload = MagicMock()
+        MockAgg.return_value = mock_agg_instance
         mock_export.return_value = Path("/fake/exports/1_translated.epub")
 
         from app.pipeline.runner_v2 import run_pipeline_v2
@@ -240,7 +278,9 @@ async def test_db_checkpoint_written(seeded_book, async_session):
     call = checkpoint_calls[0]
     assert call["paragraph_id"] == paragraph_id
     assert call["text"] == "polished text"
-    assert call["confidence"] == {"score": 0.95}
+    # confidence_log is now a dict built from verdicts list
+    assert isinstance(call["confidence"], dict)
+    assert "verdicts" in call["confidence"]
 
 
 @pytest.mark.asyncio

@@ -91,6 +91,7 @@ class Stage4Reader:
             dtype=None,
             load_in_4bit=True,
         )
+        FastLanguageModel.for_inference(self._model)
         _log.info("[Stage4Reader] Model loaded.")
 
     def unload(self) -> None:
@@ -159,7 +160,7 @@ class Stage4Reader:
         sentences: list[str],
         source_sentences: list[str],
     ) -> list[PersonaAnnotation]:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         results: list[PersonaAnnotation] = []
         for sid, (translation, source) in enumerate(zip(sentences, source_sentences)):
             for persona_name, focus in PERSONAS:

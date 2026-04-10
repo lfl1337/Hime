@@ -71,6 +71,8 @@ class Stage4Aggregator:
             bnb_4bit_compute_dtype="bfloat16",
             bnb_4bit_use_double_quant=True,
         )
+        # trust_remote_code=True is required for LFM2 (LiquidAI custom architecture).
+        # The model_id at runtime should be a local path (resolved from MODELS_DIR/lfm2-24b).
         self._tokenizer = transformers.AutoTokenizer.from_pretrained(
             settings.stage4_aggregator_model_id, trust_remote_code=True,
         )
@@ -140,6 +142,6 @@ class Stage4Aggregator:
             return AggregatorVerdict(sentence_id=0, verdict="okay", retry_instruction=None, confidence=0.0)
         sentence_id = annotations[0].sentence_id
         user_prompt = _build_user_prompt(annotations)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         raw = await loop.run_in_executor(None, self._infer_one, user_prompt)
         return self._parse_verdict(raw, sentence_id)

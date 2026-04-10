@@ -120,6 +120,7 @@ def download_model(model: dict, dry_run: bool = False) -> None:
 
     snapshot_download(**kwargs)
     print(f"  [OK]   {key} — fertig")
+    return None  # success
 
 
 def main() -> None:
@@ -144,9 +145,21 @@ def main() -> None:
 
     total_gb = sum(m["size_gb"] for m in targets if not _is_downloaded(m))
     print(f"\nLade {len(targets)} Modell(e) — ~{total_gb:.1f}GB noch nicht vorhanden\n")
+
+    failed: list[tuple[str, str]] = []
     for model in targets:
-        download_model(model, dry_run=args.dry_run)
+        try:
+            download_model(model, dry_run=args.dry_run)
+        except Exception as e:
+            err = str(e).splitlines()[0][:120]
+            print(f"  [FAIL] {model['key']} — {err}")
+            failed.append((model["key"], err))
+
     print("\nFertig.")
+    if failed:
+        print(f"\n{len(failed)} Modell(e) fehlgeschlagen:")
+        for key, err in failed:
+            print(f"  - {key}: {err}")
 
 
 if __name__ == "__main__":

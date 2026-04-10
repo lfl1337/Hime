@@ -5,6 +5,9 @@ Command:  uv run pytest tests/test_stage1_v2.py -v
 """
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -115,15 +118,18 @@ class TestAdapterTranslateGemma:
         # model.generate → token ids
         fake_model.generate.return_value = [[1, 2, 3]]
 
-        with patch(
-            "app.pipeline.stage1.adapter_translategemma.FastLanguageModel.from_pretrained",
-            return_value=(fake_model, fake_tokenizer),
-        ):
-            # Reset cached instance so patch takes effect
-            adapter_translategemma._MODEL_CACHE.clear()
-            result = await adapter_translategemma.translate(
-                "猫が走る。", rag_context="", glossary_context=""
-            )
+        fake_unsloth = types.ModuleType("unsloth")
+        mock_flm = MagicMock()
+        mock_flm.from_pretrained.return_value = (fake_model, fake_tokenizer)
+        mock_flm.for_inference = MagicMock()
+        fake_unsloth.FastLanguageModel = mock_flm
+        monkeypatch.setitem(sys.modules, "unsloth", fake_unsloth)
+
+        # Reset cached instance so patch takes effect
+        adapter_translategemma._MODEL_CACHE.clear()
+        result = await adapter_translategemma.translate(
+            "猫が走る。", rag_context="", glossary_context=""
+        )
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
@@ -144,14 +150,16 @@ class TestAdapterTranslateGemma:
             call_count += 1
             return fake_model, fake_tokenizer
 
-        adapter_translategemma._MODEL_CACHE.clear()
+        fake_unsloth = types.ModuleType("unsloth")
+        mock_flm = MagicMock()
+        mock_flm.from_pretrained.side_effect = counting_from_pretrained
+        mock_flm.for_inference = MagicMock()
+        fake_unsloth.FastLanguageModel = mock_flm
+        monkeypatch.setitem(sys.modules, "unsloth", fake_unsloth)
 
-        with patch(
-            "app.pipeline.stage1.adapter_translategemma.FastLanguageModel.from_pretrained",
-            side_effect=counting_from_pretrained,
-        ):
-            await adapter_translategemma.translate("A", rag_context="", glossary_context="")
-            await adapter_translategemma.translate("B", rag_context="", glossary_context="")
+        adapter_translategemma._MODEL_CACHE.clear()
+        await adapter_translategemma.translate("A", rag_context="", glossary_context="")
+        await adapter_translategemma.translate("B", rag_context="", glossary_context="")
 
         assert call_count == 1
 
@@ -174,14 +182,17 @@ class TestAdapterQwen35_9b:
         fake_inputs.__getitem__ = MagicMock(return_value=MagicMock())
         fake_tokenizer.return_value = fake_inputs
 
-        with patch(
-            "app.pipeline.stage1.adapter_qwen35_9b.FastLanguageModel.from_pretrained",
-            return_value=(fake_model, fake_tokenizer),
-        ):
-            adapter_qwen35_9b._MODEL_CACHE.clear()
-            result = await adapter_qwen35_9b.translate(
-                "彼女は家に帰った。", rag_context="", glossary_context=""
-            )
+        fake_unsloth = types.ModuleType("unsloth")
+        mock_flm = MagicMock()
+        mock_flm.from_pretrained.return_value = (fake_model, fake_tokenizer)
+        mock_flm.for_inference = MagicMock()
+        fake_unsloth.FastLanguageModel = mock_flm
+        monkeypatch.setitem(sys.modules, "unsloth", fake_unsloth)
+
+        adapter_qwen35_9b._MODEL_CACHE.clear()
+        result = await adapter_qwen35_9b.translate(
+            "彼女は家に帰った。", rag_context="", glossary_context=""
+        )
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
@@ -198,12 +209,15 @@ class TestAdapterQwen35_9b:
         fake_inputs.__getitem__ = MagicMock(return_value=MagicMock())
         fake_tokenizer.return_value = fake_inputs
 
-        with patch(
-            "app.pipeline.stage1.adapter_qwen35_9b.FastLanguageModel.from_pretrained",
-            return_value=(fake_model, fake_tokenizer),
-        ):
-            adapter_qwen35_9b._MODEL_CACHE.clear()
-            await adapter_qwen35_9b.translate("x", rag_context="", glossary_context="")
+        fake_unsloth = types.ModuleType("unsloth")
+        mock_flm = MagicMock()
+        mock_flm.from_pretrained.return_value = (fake_model, fake_tokenizer)
+        mock_flm.for_inference = MagicMock()
+        fake_unsloth.FastLanguageModel = mock_flm
+        monkeypatch.setitem(sys.modules, "unsloth", fake_unsloth)
+
+        adapter_qwen35_9b._MODEL_CACHE.clear()
+        await adapter_qwen35_9b.translate("x", rag_context="", glossary_context="")
 
         call_kwargs = fake_model.generate.call_args.kwargs
         assert call_kwargs.get("enable_thinking") is False
@@ -227,12 +241,15 @@ class TestAdapterGemma4:
         fake_inputs.__getitem__ = MagicMock(return_value=MagicMock())
         fake_tokenizer.return_value = fake_inputs
 
-        with patch(
-            "app.pipeline.stage1.adapter_gemma4.FastLanguageModel.from_pretrained",
-            return_value=(fake_model, fake_tokenizer),
-        ):
-            adapter_gemma4._MODEL_CACHE.clear()
-            result = await adapter_gemma4.translate("風が吹いた。", rag_context="", glossary_context="")
+        fake_unsloth = types.ModuleType("unsloth")
+        mock_flm = MagicMock()
+        mock_flm.from_pretrained.return_value = (fake_model, fake_tokenizer)
+        mock_flm.for_inference = MagicMock()
+        fake_unsloth.FastLanguageModel = mock_flm
+        monkeypatch.setitem(sys.modules, "unsloth", fake_unsloth)
+
+        adapter_gemma4._MODEL_CACHE.clear()
+        result = await adapter_gemma4.translate("風が吹いた。", rag_context="", glossary_context="")
 
         assert isinstance(result, str)
 
@@ -250,12 +267,15 @@ class TestAdapterGemma4:
         fake_inputs.__getitem__ = MagicMock(return_value=MagicMock())
         fake_tokenizer.return_value = fake_inputs
 
-        with patch(
-            "app.pipeline.stage1.adapter_gemma4.FastLanguageModel.from_pretrained",
-            return_value=(fake_model, fake_tokenizer),
-        ):
-            adapter_gemma4._MODEL_CACHE.clear()
-            await adapter_gemma4.translate("x", rag_context="", glossary_context="")
+        fake_unsloth = types.ModuleType("unsloth")
+        mock_flm = MagicMock()
+        mock_flm.from_pretrained.return_value = (fake_model, fake_tokenizer)
+        mock_flm.for_inference = MagicMock()
+        fake_unsloth.FastLanguageModel = mock_flm
+        monkeypatch.setitem(sys.modules, "unsloth", fake_unsloth)
+
+        adapter_gemma4._MODEL_CACHE.clear()
+        await adapter_gemma4.translate("x", rag_context="", glossary_context="")
 
         call_kwargs = fake_model.generate.call_args.kwargs
         assert "enable_thinking" not in call_kwargs

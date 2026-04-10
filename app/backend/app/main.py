@@ -23,6 +23,8 @@ from .routers import compare as compare_router
 from .routers import review as review_router
 from .routers import models as models_router
 from .routers import lexicon as lexicon_router
+from .routers import verify as verify_router
+from .routers import glossary as glossary_router
 from .websocket import streaming
 from .services.epub_service import get_setting, scan_watch_folder
 from .services.hardware_monitor import cleanup_old_hardware_stats, get_hardware_stats, save_hardware_stats, vacuum_hardware_db
@@ -135,6 +137,8 @@ app.include_router(compare_router.router, prefix="/api/v1")
 app.include_router(models_router.router, prefix="/api/v1")
 app.include_router(review_router.router, prefix="/api/v1")
 app.include_router(lexicon_router.router, prefix="/api/v1")
+app.include_router(verify_router.router, prefix="/api/v1")
+app.include_router(glossary_router.router, prefix="/api/v1")
 app.include_router(streaming.router)  # WebSocket — no /api/v1 prefix
 
 

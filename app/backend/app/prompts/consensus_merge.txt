@@ -12,3 +12,9 @@ that:
 
 Output only the consensus English translation. No commentary, no headers, no
 numbering.
+
+After the consensus translation, output a fenced JSON block listing per-sentence confidence:
+```json
+{"confidence": [{"sentence": 1, "score": 5}, {"sentence": 2, "score": 4}, ...]}
+```
+The score is 1 (low) to 5 (high) and reflects how strongly the source drafts agreed.

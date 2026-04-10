@@ -141,9 +141,11 @@ async def ws_translate_pipeline(
 
             source_content = source.content
             notes = job_row.notes or ""
+            # v1.2.1: resolve book_id for glossary/RAG enrichment if available
+            book_id: int | None = getattr(source, "book_id", None)
 
         task = asyncio.create_task(
-            run_pipeline(job_id, source_content, notes, ws_queue)
+            run_pipeline(job_id, source_content, notes, ws_queue, book_id=book_id)
         )
         _active_pipelines[job_id] = task
     else:

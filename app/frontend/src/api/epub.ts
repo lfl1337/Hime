@@ -86,6 +86,19 @@ export async function rescanBookChapters(bookId: number): Promise<BookSummary> {
   return res.json() as Promise<BookSummary>
 }
 
+export async function updateBookSeries(
+  bookId: number,
+  seriesId: number | null,
+  seriesTitle: string | null,
+): Promise<BookSummary> {
+  const res = await apiFetch(`/api/v1/epub/books/${bookId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ series_id: seriesId, series_title: seriesTitle }),
+  })
+  if (!res.ok) throw new Error(`Failed to update book series: ${res.status}`)
+  return res.json() as Promise<BookSummary>
+}
+
 export async function getEpubSettings(): Promise<{ epub_watch_folder: string; auto_scan_interval: string }> {
   const res = await apiFetch('/api/v1/epub/settings')
   if (!res.ok) throw new Error(`Failed to load settings: ${res.status}`)

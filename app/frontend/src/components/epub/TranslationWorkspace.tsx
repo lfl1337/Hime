@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getParagraphs, saveTranslation, exportChapter } from '@/api/epub'
+import { getParagraphs, saveTranslation, exportChapter, updateBookSeries } from '@/api/epub'
 import { createSourceText, startTranslation } from '@/api/translate'
 import { usePipeline } from '@/api/websocket'
 import { useStore } from '@/store'
@@ -377,9 +377,13 @@ export function TranslationWorkspace({ book, chapter }: Props) {
             book_id={book.id}
             series_id={book.series_id ?? null}
             series_title={book.series_title ?? null}
-            onSeriesChange={(id, title) => {
-              // TODO: persist via PUT /api/v1/books/{id} (endpoint not yet exposed)
-              console.log('series change requested:', id, title)
+            onSeriesChange={async (id, title) => {
+              if (!book) return
+              try {
+                await updateBookSeries(book.id, id, title)
+              } catch (e) {
+                console.error('Failed to save series:', e)
+              }
             }}
             sample_source={currentParagraph?.source_text}
             sample_translation={currentParagraph?.translated_text ?? undefined}

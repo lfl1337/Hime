@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
 from ..middleware.rate_limit import limiter
-from ..utils.sanitize import sanitize_text  # noqa: F401 — available for future endpoint use
+from ..utils.sanitize import sanitize_text
 from ..services.epub_service import (
     export_chapter,
     get_chapters,
@@ -19,6 +19,7 @@ from ..services.epub_service import (
     rescan_book_chapters,
     save_translation,
     set_setting,
+    update_book_series,
 )
 
 router = APIRouter(prefix="/epub", tags=["epub"])
@@ -35,6 +36,11 @@ class TranslationRequest(BaseModel):
 class SettingRequest(BaseModel):
     key: str = Field(..., pattern=r"^(epub_watch_folder|auto_scan_interval)$")
     value: str = Field(..., max_length=1024)
+
+
+class BookUpdateRequest(BaseModel):
+    series_id: int | None = None
+    series_title: str | None = Field(default=None, max_length=512)
 
 
 class ExportFormat(str, Enum):
@@ -128,6 +134,23 @@ async def api_rescan_book(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
+
+@router.patch("/books/{book_id}", status_code=status.HTTP_200_OK)
+async def api_update_book(
+    book_id: int,
+    body: BookUpdateRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    result = await update_book_series(
+        book_id=book_id,
+        series_id=body.series_id,
+        series_title=sanitize_text(body.series_title) if body.series_title else None,
+        session=session,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    return result
 
 
 @router.get("/settings")

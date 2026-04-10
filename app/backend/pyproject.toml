@@ -25,6 +25,7 @@ dependencies = [
     "sqlite-vec>=0.1.6",
     "sentence-transformers>=3.0.0",
     "mcp>=1.0.0",
+    "huggingface_hub>=0.24.0",
 ]
 
 [project.optional-dependencies]

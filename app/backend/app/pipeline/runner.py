@@ -35,6 +35,8 @@ from .prompts import (
     stage3_messages,
 )
 from .stage1 import run_stage1, Stage1Drafts
+from .stage4_reader import Stage4Reader
+from .stage4_aggregator import Stage4Aggregator
 
 
 async def _stream_stage(
@@ -258,20 +260,89 @@ async def run_pipeline(
             ws_queue,
         )
 
-        duration_ms = int((time.monotonic() - started_at) * 1000)
-        await _checkpoint(
-            job_id,
-            final_output=final_text,
-            content=final_text,
-            current_stage="complete",
-            pipeline_duration_ms=duration_ms,
-        )
+        # ------------------------------------------------------------------ #
+        # Stage 4 — Reader Panel + Aggregator (retry loop, max N attempts)   #
+        # ------------------------------------------------------------------ #
+        import re as _re
+        _SENT_SPLIT = _re.compile(r'(?<=[.!?…」])\s+')
+        sentences = _SENT_SPLIT.split(final_text.strip()) or [final_text]
+        source_sentences = _SENT_SPLIT.split(source_text.strip()) or [source_text]
+        if len(source_sentences) < len(sentences):
+            source_sentences += [source_sentences[-1]] * (len(sentences) - len(source_sentences))
+        source_sentences = source_sentences[: len(sentences)]
 
-        await ws_queue.put({
-            "event": "pipeline_complete",
-            "final_output": final_text,
-            "duration_ms": duration_ms,
-        })
+        reader = Stage4Reader()
+        reader.load(settings)
+        aggregator = Stage4Aggregator()
+
+        attempt = 0
+        max_attempts = settings.stage4_max_retries + 1
+
+        while attempt < max_attempts:
+            attempt += 1
+            await ws_queue.put({"event": "stage4_start", "attempt": attempt})
+            await _checkpoint(job_id, current_stage=f"stage4_attempt_{attempt}")
+
+            annotations = await reader.review(sentences=sentences, source_sentences=source_sentences)
+            await ws_queue.put({"event": "stage4_reader_complete", "attempt": attempt, "annotation_count": len(annotations)})
+
+            reader.unload()
+            aggregator.load(settings)
+
+            from itertools import groupby as _groupby
+            sorted_ann = sorted(annotations, key=lambda a: a.sentence_id)
+            verdicts: list = []
+            for sid, group in _groupby(sorted_ann, key=lambda a: a.sentence_id):
+                verdict = await aggregator.aggregate(list(group))
+                verdicts.append(verdict)
+                await ws_queue.put({
+                    "event": "stage4_verdict",
+                    "attempt": attempt,
+                    "sentence_id": sid,
+                    "verdict": verdict.verdict,
+                    "retry_instruction": verdict.retry_instruction,
+                    "confidence": verdict.confidence,
+                })
+
+            aggregator.unload()
+
+            retry_verdicts = [v for v in verdicts if v.verdict == "retry"]
+            if not retry_verdicts or attempt >= max_attempts:
+                if retry_verdicts and attempt >= max_attempts:
+                    await ws_queue.put({"event": "stage4_forced_okay", "attempt": attempt, "detail": "Max retries reached; accepting current translation."})
+                break
+
+            retry_notes = " | ".join(
+                f"[s{v.sentence_id}] {v.retry_instruction}"
+                for v in retry_verdicts
+                if v.retry_instruction
+            )
+            await ws_queue.put({"event": "stage4_retry", "attempt": attempt, "retry_notes": retry_notes})
+
+            await ws_queue.put({"event": "stage3_start"})
+            await _checkpoint(job_id, current_stage=f"stage3_retry_{attempt}")
+
+            final_text = await _stream_stage(
+                "stage3",
+                settings.hime_qwen14b_url,
+                settings.hime_qwen14b_model,
+                stage3_messages(stage2_text, retry_notes=retry_notes),
+                ws_queue,
+            )
+            await _checkpoint(job_id, final_output=final_text)
+
+            sentences = _SENT_SPLIT.split(final_text.strip()) or [final_text]
+            if len(source_sentences) < len(sentences):
+                source_sentences += [source_sentences[-1]] * (len(sentences) - len(source_sentences))
+            source_sentences = source_sentences[: len(sentences)]
+
+            reader.load(settings)
+
+        await ws_queue.put({"event": "stage4_complete", "attempts": attempt, "final_output": final_text})
+
+        duration_ms = int((time.monotonic() - started_at) * 1000)
+        await _checkpoint(job_id, final_output=final_text, content=final_text, current_stage="complete", pipeline_duration_ms=duration_ms)
+        await ws_queue.put({"event": "pipeline_complete", "final_output": final_text, "duration_ms": duration_ms})
 
     except Exception as exc:
         await ws_queue.put({"event": "pipeline_error", "detail": str(exc)})

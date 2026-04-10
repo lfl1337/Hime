@@ -5,8 +5,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "scripts"))
 import model_inventory_report as inv
 
 
@@ -47,3 +45,4 @@ def test_report_contains_sections(tmp_path, monkeypatch):
     assert "## Qwen2.5-32B Checkpoints" in report
     assert "## Gesamtverbrauch" in report
     assert "## Lokale Modelle" in report
+    assert "gemma:latest" in report

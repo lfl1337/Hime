@@ -90,8 +90,10 @@ def build_report() -> str:
             if subdir.is_dir():
                 s = scan_dir(subdir)
                 lines.append(f"- `{subdir.name}/` -- {format_size(s['total_bytes'])}")
-        adapter = scan_dir(LORA_DIR / "adapter")
-        lines.append(f"- `adapter/` -- {format_size(adapter['total_bytes'])} (aktiv)")
+        adapter_path = LORA_DIR / "adapter"
+        if adapter_path.exists():
+            adapter = scan_dir(adapter_path)
+            lines.append(f"- `adapter/` -- {format_size(adapter['total_bytes'])} (aktiv)")
     lines.append("")
 
     lines += ["## Lokale Modelle (modelle/)", ""]

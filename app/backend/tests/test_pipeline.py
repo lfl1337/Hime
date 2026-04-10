@@ -44,6 +44,21 @@ class TestPromptTemplateLoading:
         assert result == "FALLBACK_VALUE"
 
 
+    def test_stage3_messages_with_retry_notes(self):
+        from app.pipeline.prompts import stage3_messages
+        msgs = stage3_messages("Some polished text.", retry_notes="[s0] Preserve wistful tone.")
+        system = msgs[0]["content"]
+        assert "READER PANEL RETRY NOTES" in system
+        assert "wistful tone" in system
+        assert msgs[1]["content"] == "Some polished text."
+
+    def test_stage3_messages_without_retry_notes_unchanged(self):
+        from app.pipeline.prompts import stage3_messages
+        msgs_plain = stage3_messages("Some polished text.")
+        msgs_empty = stage3_messages("Some polished text.", retry_notes="")
+        assert msgs_plain[0]["content"] == msgs_empty[0]["content"]
+
+
 class TestPipelineGracefulDegradation:
     """Verify pipeline handles partial Stage 1 failures."""
 

@@ -441,6 +441,7 @@ async def update_book_series(
         return None
     book.series_id = series_id
     book.series_title = series_title
+    await session.flush()
     await session.commit()
     await session.refresh(book)
     return _book_to_dict(book)

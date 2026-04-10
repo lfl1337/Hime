@@ -36,7 +36,13 @@ Rules:
 - Render onomatopoeia naturally in English; do not transliterate romaji sounds.
 - Keep Japanese proper nouns (names, places) unless a canonical English form exists.
 - Output only the English translation. Do not include the original Japanese, commentary,
-  or explanatory footnotes unless the source text itself contains them."""
+  or explanatory footnotes unless the source text itself contains them.
+
+{glossary}
+
+{rag_context}
+
+{lexicon_anchor}"""
 
 _CONSENSUS_FALLBACK = """\
 You are a senior Japanese-to-English translation editor. You will be given three

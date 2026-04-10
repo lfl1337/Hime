@@ -24,11 +24,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import UTC, datetime
+from itertools import groupby
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
 from ..database import AsyncSessionLocal
 from ..models import Chapter, Paragraph, Translation
 from ..services.epub_export_service import export_book
@@ -36,8 +39,8 @@ from . import preprocessor as _preprocessor
 from . import stage1 as _stage1
 from . import stage2_merger as _stage2
 from . import stage3_polish as _stage3
-from . import stage4_aggregator as _stage4_agg
-from . import stage4_reader as _stage4_reader
+from .stage4_aggregator import Stage4Aggregator
+from .stage4_reader import Stage4Reader
 
 _log = logging.getLogger(__name__)
 
@@ -69,7 +72,7 @@ async def _checkpoint_segment(
                     Paragraph.is_translated == True,  # noqa: E712
                 )
             )
-            chapter.translated_paragraphs = len(res.scalars().all()) + 1
+            chapter.translated_paragraphs = len(res.scalars().all())
             chapter.status = (
                 "complete"
                 if chapter.translated_paragraphs >= chapter.total_paragraphs
@@ -85,7 +88,7 @@ async def _checkpoint_segment(
                     .join(Chapter, Paragraph.chapter_id == Chapter.id)
                     .where(Chapter.book_id == book.id, Paragraph.is_translated == True)  # noqa: E712
                 )
-                book.translated_paragraphs = len(res2.scalars().all()) + 1
+                book.translated_paragraphs = len(res2.scalars().all())
                 book.status = (
                     "complete"
                     if book.translated_paragraphs >= book.total_paragraphs
@@ -129,6 +132,8 @@ async def run_pipeline_v2(
         total = len(segments)
         await ws_queue.put({"event": "preprocess_complete", "segment_count": total})
 
+        _SENT_SPLIT = re.compile(r'(?<=[.!?…」])\s+')
+
         for i, segment in enumerate(segments):
             paragraph_id: int = segment.paragraph_id
             await ws_queue.put({
@@ -138,40 +143,104 @@ async def run_pipeline_v2(
                 "total": total,
             })
 
-            drafts = await _stage1.run_stage1(segment, session)
+            # Stage 1: pass fields from PreprocessedSegment
+            drafts = await _stage1.run_stage1(
+                segment=segment.source_jp,
+                rag_context=segment.rag_context,
+                glossary_context=segment.glossary_context,
+            )
             await ws_queue.put({"event": "stage1_complete", "paragraph_id": paragraph_id})
 
-            merged_str = await _stage2.merge(drafts, session)
+            # Stage 2: convert Stage1Drafts to dict with keys matching merger_messages()
+            drafts_dict: dict[str, str] = {
+                "qwen32b": drafts.qwen32b or "",
+                "translategemma": drafts.translategemma12b or "",
+                "qwen35_9b": drafts.qwen35_9b or "",
+                "gemma4_e4b": drafts.gemma4_e4b or "",
+                "jmdict": drafts.jmdict,
+            }
+            merged_str = await _stage2.merge(drafts_dict, segment.rag_context, segment.glossary_context)
             await ws_queue.put({"event": "stage2_complete", "paragraph_id": paragraph_id})
 
-            polished_str = await _stage3.polish(merged_str, session)
+            # Stage 3: polish(merged, glossary_context, retry_instruction="")
+            polished_str = await _stage3.polish(merged_str, segment.glossary_context)
             await ws_queue.put({"event": "stage3_complete", "paragraph_id": paragraph_id})
 
             retry_count = 0
             current_polished = polished_str
             confidence_log: dict | None = None
 
+            # Stage 4: Reader + Aggregator with retry loop
+            reader = Stage4Reader()
+            reader.load(settings)
+            aggregator = Stage4Aggregator()
+
+            sentences = _SENT_SPLIT.split(current_polished.strip()) or [current_polished]
+            source_sentences = _SENT_SPLIT.split(segment.source_jp.strip()) or [segment.source_jp]
+            if len(source_sentences) < len(sentences):
+                source_sentences += [source_sentences[-1]] * (len(sentences) - len(source_sentences))
+            source_sentences = source_sentences[: len(sentences)]
+
             while True:
-                annotations = await _stage4_reader.review(current_polished, session)
-                verdict_obj = await _stage4_agg.aggregate(annotations)
-                confidence_log = getattr(verdict_obj, "confidence", None)
+                annotations = await reader.review(
+                    sentences=sentences, source_sentences=source_sentences
+                )
+
+                # Aggregate per sentence group
+                sorted_ann = sorted(annotations, key=lambda a: a.sentence_id)
+                verdicts = []
+                for sid, group in groupby(sorted_ann, key=lambda a: a.sentence_id):
+                    verdict = await aggregator.aggregate(list(group))
+                    verdicts.append(verdict)
+
+                retry_verdicts = [v for v in verdicts if v.verdict == "retry"]
+                # Build a combined verdict for the paragraph
+                paragraph_verdict = "retry" if retry_verdicts else "okay"
+                retry_instruction = (
+                    " | ".join(
+                        f"[s{getattr(v, 'sentence_id', '?')}] {v.retry_instruction}"
+                        for v in retry_verdicts
+                        if v.retry_instruction
+                    )
+                    if retry_verdicts
+                    else ""
+                )
+
+                # Build confidence_log from verdicts
+                confidence_log = {
+                    "verdicts": [
+                        {
+                            "sentence_id": getattr(v, "sentence_id", None),
+                            "verdict": v.verdict,
+                            "confidence": getattr(v, "confidence", None),
+                        }
+                        for v in verdicts
+                    ]
+                }
 
                 await ws_queue.put({
                     "event": "stage4_verdict",
                     "paragraph_id": paragraph_id,
-                    "verdict": verdict_obj.verdict,
+                    "verdict": paragraph_verdict,
                     "retry_count": retry_count,
                 })
 
-                if verdict_obj.verdict == "retry" and retry_count < MAX_STAGE4_RETRIES:
+                if paragraph_verdict == "retry" and retry_count < MAX_STAGE4_RETRIES:
                     retry_count += 1
-                    retry_instruction = getattr(verdict_obj, "retry_instruction", "") or ""
+                    reader.unload()
                     current_polished = await _stage3.polish(
-                        merged_str, session, retry_instruction=retry_instruction
+                        merged_str, segment.glossary_context, retry_instruction=retry_instruction
                     )
+                    sentences = _SENT_SPLIT.split(current_polished.strip()) or [current_polished]
+                    if len(source_sentences) < len(sentences):
+                        source_sentences += [source_sentences[-1]] * (len(sentences) - len(source_sentences))
+                    source_sentences = source_sentences[: len(sentences)]
+                    reader.load(settings)
                 else:
+                    reader.unload()
                     break
 
+            aggregator.unload()
             final_text = current_polished
             await _checkpoint_segment(paragraph_id, final_text, confidence_log)
 

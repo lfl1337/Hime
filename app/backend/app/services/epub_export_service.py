@@ -53,7 +53,7 @@ def _build_epub_sync(
     for idx, ch in enumerate(chapter_data):
         ch_id = f"chapter_{idx:04d}"
         ch_filename = f"{ch_id}.xhtml"
-        title_safe = ch["title"].replace('"', "&quot;").replace("<", "&lt;")
+        title_safe = ch["title"].replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
         paragraphs_html = "".join(
             f"<p>{para.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')}</p>"
             for para in ch["text"].split("\n\n")

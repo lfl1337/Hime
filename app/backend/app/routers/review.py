@@ -1,8 +1,10 @@
 """POST /api/v1/review — run the reader panel against a translation."""
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from ..middleware.rate_limit import limiter
 from ..services.reader_panel import ReaderPanel, ReviewFinding
+from ..utils.sanitize import sanitize_text
 
 router = APIRouter(prefix="/review", tags=["review"])
 
@@ -22,8 +24,11 @@ class ReviewResponse(BaseModel):
 
 
 @router.post("", response_model=ReviewResponse)
-async def review_translation(body: ReviewRequest) -> ReviewResponse:
-    findings = await _panel.review(translation=body.translation, source=body.source)
+@limiter.limit("10/minute")
+async def review_translation(request: Request, body: ReviewRequest) -> ReviewResponse:
+    translation = sanitize_text(body.translation, field_name="translation")
+    source = sanitize_text(body.source, field_name="source") if body.source is not None else None
+    findings = await _panel.review(translation=translation, source=source)
     rerun = bool(body.auto_rerun and any(f.severity == "error" for f in findings))
     # Note: auto_rerun is acknowledged here but the actual re-translation is the
     # caller's responsibility (UI flow). We just signal whether one is warranted.

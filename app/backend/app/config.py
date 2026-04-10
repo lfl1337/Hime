@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     hime_qwen32b_url: str = "http://127.0.0.1:8003/v1"
     hime_qwen32b_model: str = "hime-qwen32b"
 
+    # Pipeline Stage 1 v2 — local Unsloth model paths (relative to MODELS_DIR by default)
+    # Override via .env: HIME_TRANSLATEGEMMA_PATH=/absolute/path/to/model
+    # NOTE: unsloth requires separate install: pip install "unsloth[cu124-torch260]"
+    hime_translategemma_path: str = ""   # resolved at runtime → MODELS_DIR/translategemma-12b
+    hime_qwen35_9b_path: str = ""        # resolved at runtime → MODELS_DIR/qwen3.5-9b
+    hime_gemma4_path: str = ""           # resolved at runtime → MODELS_DIR/gemma4-e4b
+
     # Pipeline Consensus — merger model (defaults to qwen32b slot)
     hime_merger_url: str = "http://127.0.0.1:8003/v1"
     hime_merger_model: str = "hime-qwen32b"
@@ -82,6 +89,15 @@ class Settings(BaseSettings):
     hime_embeddings_dir: str = ""   # blank → resolved from paths.EMBEDDINGS_DIR at runtime
     hime_rag_dir: str = ""          # blank → resolved from paths.RAG_DIR at runtime
     hime_allow_downloads: bool = False  # gates the model download endpoint
+
+    # Pipeline Stage 4 — Reader Panel + Aggregator (v2)
+    # Defaults point to local model paths (resolved from MODELS_DIR).
+    # Override via .env: STAGE4_READER_MODEL_ID=/absolute/path or HF hub id.
+    stage4_reader_model_id: str = str(_paths.MODELS_DIR / "qwen3-2b")
+    stage4_aggregator_model_id: str = str(_paths.MODELS_DIR / "lfm2-24b")
+    stage4_reader_dtype: str = "nf4"       # nf4 | fp4 | fp16
+    stage4_aggregator_dtype: str = "int4"  # int4 | fp16
+    stage4_max_retries: int = 3            # max Stage 3→4 retry cycles before forced okay
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),

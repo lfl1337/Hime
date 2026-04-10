@@ -104,6 +104,7 @@ class Stage4Reader:
         _log.info("[Stage4Reader] VRAM released.")
 
     def _infer_one(self, system_prompt: str, user_prompt: str) -> str:
+        import contextlib
         import torch  # type: ignore[import]
         messages = [
             {"role": "system", "content": system_prompt},
@@ -114,7 +115,8 @@ class Stage4Reader:
         )
         raw_inputs = self._tokenizer(text, return_tensors="pt")
         inputs = raw_inputs.to(self._model.device) if hasattr(raw_inputs, "to") else raw_inputs
-        with torch.no_grad():
+        _no_grad = torch.no_grad if hasattr(torch, "no_grad") else contextlib.nullcontext
+        with _no_grad():
             output_ids = self._model.generate(
                 **inputs,
                 max_new_tokens=256,

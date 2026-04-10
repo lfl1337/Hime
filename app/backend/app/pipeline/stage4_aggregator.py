@@ -93,6 +93,7 @@ class Stage4Aggregator:
         _log.info("[Stage4Aggregator] VRAM released.")
 
     def _infer_one(self, user_prompt: str) -> str:
+        import contextlib
         import torch  # type: ignore[import]
         messages = [
             {"role": "system", "content": _AGGREGATOR_SYSTEM},
@@ -101,7 +102,8 @@ class Stage4Aggregator:
         text = self._tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         raw_inputs = self._tokenizer(text, return_tensors="pt")
         inputs = raw_inputs.to(self._model.device) if hasattr(raw_inputs, "to") else raw_inputs
-        with torch.no_grad():
+        _no_grad = torch.no_grad if hasattr(torch, "no_grad") else contextlib.nullcontext
+        with _no_grad():
             output_ids = self._model.generate(
                 **inputs,
                 max_new_tokens=128,

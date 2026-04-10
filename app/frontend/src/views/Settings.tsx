@@ -8,6 +8,7 @@ import { connectionRegistry } from '@/utils/connectionRegistry'
 import type { Connection } from '@/utils/connectionRegistry'
 import { getEpubSettings, updateEpubSetting } from '@/api/epub'
 import { getHealthInfo } from '@/api/client'
+import { ModelStatusDashboard } from '@/components/ModelStatusDashboard'
 
 // ---------------------------------------------------------------------------
 // Open URL
@@ -381,6 +382,13 @@ export function Settings() {
           initialValue={scriptsPath}
           onSave={v => updateTrainingConfig('scripts_path', v).then(cfg => setScriptsPath(cfg.scripts_path))}
         />
+      </Section>
+
+      {/* ── Pipeline Models ──────────────────────────────────────────── */}
+      <Section title="Pipeline Models">
+        <div className="px-4 py-3">
+          <ModelStatusDashboard />
+        </div>
       </Section>
 
       {/* ── Memory & Performance ───────────────────────────────────────── */}

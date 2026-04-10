@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { TrainingExplanation } from '@/components/TrainingExplanation'
 import {
   ComposedChart,
   Line,
@@ -816,6 +817,14 @@ export function TrainingMonitor() {
 
   const bestCp = checkpoints.find(c => c.is_best) ?? checkpoints.find(c => c.is_last) ?? null
 
+  const checkpointSummary = useMemo(() => {
+    if (checkpoints.length === 0) return null
+    const sorted = [...checkpoints].sort((a, b) => b.step - a.step)
+    const newest = sorted[0]
+    const best = checkpoints.find(c => c.is_best) ?? null
+    return { sorted, newest, best }
+  }, [checkpoints])
+
 
   // Running process for selected run
   const runningProcess = selectedRun
@@ -919,6 +928,8 @@ export function TrainingMonitor() {
 
   return (
     <div className="p-6 space-y-6 overflow-y-auto h-full">
+
+      <TrainingExplanation />
 
       {/* Confirmation modal */}
       {confirmAction && (
@@ -1397,45 +1408,57 @@ export function TrainingMonitor() {
         {/* 4. Checkpoints */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
           <h3 className="text-sm font-medium text-zinc-400 mb-4">Checkpoints</h3>
-          {checkpoints.length === 0 ? (
+          {checkpointSummary === null ? (
             <p className="text-zinc-600 text-sm">No checkpoints found.</p>
           ) : (
-            <div className="space-y-3">
-              {checkpoints.map(cp => (
-                <div
-                  key={cp.name}
-                  className="flex items-start justify-between rounded-lg border border-zinc-800 bg-zinc-950 p-4"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-zinc-200 font-mono text-sm">{cp.name}</span>
-                      {cp.is_best && (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-green-900/50 text-green-400 font-medium">BEST</span>
-                      )}
-                      {cp.is_last && (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-blue-900/50 text-blue-400 font-medium">LAST</span>
-                      )}
-                      {cp.is_interrupted && (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-yellow-900/50 text-yellow-400 font-medium">INTERRUPTED</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-zinc-500 space-x-3">
-                      <span>Step {cp.step.toLocaleString()}</span>
-                      <span>Epoch {cp.epoch.toFixed(2)}</span>
-                      {cp.eval_loss !== null && <span>Loss {cp.eval_loss.toFixed(4)}</span>}
-                      <span>{cp.folder_size_mb.toFixed(0)} MB</span>
-                      <span>{new Date(cp.timestamp).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => copy(cp.full_path, `cp-path-${cp.name}`)}
-                    className="ml-4 shrink-0 px-3 py-1.5 rounded-lg text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+            <details className="group">
+              <summary className="cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 select-none">
+                Checkpoints ({checkpointSummary.sorted.length}) — newest: {checkpointSummary.newest.name}
+                {checkpointSummary.best && (
+                  <> — best: {checkpointSummary.best.name}
+                    {checkpointSummary.best.eval_loss !== null && (
+                      <> (eval_loss {checkpointSummary.best.eval_loss.toFixed(4)})</>
+                    )}
+                  </>
+                )}
+              </summary>
+              <div className="mt-3 max-h-[400px] overflow-y-auto space-y-3 pr-1">
+                {checkpointSummary.sorted.map(cp => (
+                  <div
+                    key={cp.name}
+                    className="flex items-start justify-between rounded-lg border border-zinc-800 bg-zinc-950 p-4"
                   >
-                    {copied === `cp-path-${cp.name}` ? 'Copied!' : 'Copy path'}
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-200 font-mono text-sm">{cp.name}</span>
+                        {cp.is_best && (
+                          <span className="px-1.5 py-0.5 rounded text-xs bg-green-900/50 text-green-400 font-medium">★ best</span>
+                        )}
+                        {cp.is_last && (
+                          <span className="px-1.5 py-0.5 rounded text-xs bg-blue-900/50 text-blue-400 font-medium">LAST</span>
+                        )}
+                        {cp.is_interrupted && (
+                          <span className="px-1.5 py-0.5 rounded text-xs bg-yellow-900/50 text-yellow-400 font-medium">INTERRUPTED</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-zinc-500 space-x-3">
+                        <span>Step {cp.step.toLocaleString()}</span>
+                        <span>Epoch {cp.epoch.toFixed(2)}</span>
+                        {cp.eval_loss !== null && <span>Loss {cp.eval_loss.toFixed(4)}</span>}
+                        <span>{cp.folder_size_mb.toFixed(0)} MB</span>
+                        <span>{new Date(cp.timestamp).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => copy(cp.full_path, `cp-path-${cp.name}`)}
+                      className="ml-4 shrink-0 px-3 py-1.5 rounded-lg text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+                    >
+                      {copied === `cp-path-${cp.name}` ? 'Copied!' : 'Copy path'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
           <p className="mt-3 text-xs text-zinc-600">
             Hinweis: Aktuelles Training speichert max. 3 Checkpoints (Änderung greift beim nächsten Start)

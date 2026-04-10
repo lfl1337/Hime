@@ -7,6 +7,10 @@ import type { BookSummary, ChapterSummary, ParagraphInfo } from '@/api/epub'
 import { PipelineProgress } from '@/components/PipelineProgress'
 import { Stage1Panel } from '@/components/Stage1Panel'
 import { ParagraphNavigator } from './ParagraphNavigator'
+import { ModelStatusDashboard } from '@/components/ModelStatusDashboard'
+import { PipelineExplanation } from '@/components/PipelineExplanation'
+import { ReaderPanelView } from '@/components/ReaderPanelView'
+import { BookDetails } from '@/components/BookDetails'
 
 interface Props {
   book: BookSummary | null
@@ -176,6 +180,7 @@ export function TranslationWorkspace({ book, chapter }: Props) {
             →
           </button>
         </div>
+        <ModelStatusDashboard compact />
         {/* Mini progress */}
         <div className="w-24 bg-zinc-800 rounded-full h-1.5 shrink-0">
           <div
@@ -219,6 +224,8 @@ export function TranslationWorkspace({ book, chapter }: Props) {
             {pipeline.stage !== 'idle' && (
               <PipelineProgress currentStage={pipeline.stage} />
             )}
+
+            <PipelineExplanation />
 
             {/* Stage 1 streaming detail */}
             <Stage1Panel
@@ -272,6 +279,14 @@ export function TranslationWorkspace({ book, chapter }: Props) {
                   </p>
                 )}
               </div>
+            )}
+
+            {/* Reader Panel */}
+            {(pipeline.finalOutput || currentParagraph?.translated_text) && (
+              <ReaderPanelView
+                translation={pipeline.finalOutput || currentParagraph?.translated_text || ''}
+                source={currentParagraph?.source_text ?? null}
+              />
             )}
 
             {/* Error */}
@@ -357,6 +372,19 @@ export function TranslationWorkspace({ book, chapter }: Props) {
             )}
           </div>
         </div>
+        {book && (
+          <BookDetails
+            book_id={book.id}
+            series_id={book.series_id ?? null}
+            series_title={book.series_title ?? null}
+            onSeriesChange={(id, title) => {
+              // TODO: persist via PUT /api/v1/books/{id} (endpoint not yet exposed)
+              console.log('series change requested:', id, title)
+            }}
+            sample_source={currentParagraph?.source_text}
+            sample_translation={currentParagraph?.translated_text ?? undefined}
+          />
+        )}
       </div>
     </div>
   )

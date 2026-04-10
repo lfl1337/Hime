@@ -329,4 +329,4 @@ def test_generate_report_not_in_its_own_analysis(tmp_path):
         report_subdir="_Reports",
     )
     content = report_path.read_text(encoding="utf-8")
-    assert report_path.name not in content or content.count(report_path.name) == 0
+    assert report_path.name not in content

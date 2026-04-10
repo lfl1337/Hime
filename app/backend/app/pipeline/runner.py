@@ -12,6 +12,8 @@ DB checkpoints are written after every stage via short-lived AsyncSessionLocal
 sessions so the job survives a WebSocket disconnect.
 """
 import asyncio
+import json
+import re
 import time
 
 from sqlalchemy import select
@@ -68,6 +70,25 @@ async def _stream_stage(
     full = "".join(buf)
     await ws_queue.put({"event": f"{event_prefix}_complete", "output": full})
     return full
+
+
+_CONFIDENCE_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+
+def _parse_confidence_log(text: str) -> dict | None:
+    """Extract the confidence JSON block from a consensus output."""
+    if not text:
+        return None
+    m = _CONFIDENCE_FENCE.search(text)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or "confidence" not in data:
+        return None
+    return data
 
 
 async def _checkpoint(job_id: int, **fields) -> None:
@@ -172,6 +193,12 @@ async def run_pipeline(
             ws_queue,
         )
         await _checkpoint(job_id, consensus_output=consensus_text)
+
+        # v1.2.1: parse confidence log from consensus output
+        confidence_data = _parse_confidence_log(consensus_text)
+        if confidence_data is not None:
+            await _checkpoint(job_id, confidence_log=json.dumps(confidence_data))
+            await ws_queue.put({"event": "confidence_log", "data": confidence_data})
 
         # ------------------------------------------------------------------ #
         # Stage 2 — 72B refinement                                            #

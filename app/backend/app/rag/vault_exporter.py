@@ -97,7 +97,7 @@ def _write_series_index(path: Path, series_id: int, chunks: list[dict], last_upd
 
 
 def _write_top_index(vault_dir: Path) -> None:
-    hime_dir = vault_dir / "Hime"
+    hime_dir = vault_dir
     series_entries = []
     for d in sorted(hime_dir.iterdir()):
         if d.is_dir() and d.name.startswith("series_"):
@@ -198,7 +198,7 @@ def sync_series(
     for c in chunks:
         c["series_id"] = series_id
 
-    series_dir = vault_dir / "Hime" / f"series_{series_id}"
+    series_dir = vault_dir / f"series_{series_id}"
     series_dir.mkdir(parents=True, exist_ok=True)
 
     existing_pids = _read_existing_paragraph_ids(series_dir)
@@ -222,7 +222,7 @@ def sync_series(
     # Bootstrap .obsidian/graph.json on first run
     known_series = [
         int(d.name.split("_", 1)[1])
-        for d in (vault_dir / "Hime").iterdir()
+        for d in (vault_dir).iterdir()
         if d.is_dir() and d.name.startswith("series_")
         and d.name.split("_", 1)[1].isdigit()
     ]

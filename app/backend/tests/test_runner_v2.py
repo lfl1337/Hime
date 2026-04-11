@@ -73,14 +73,6 @@ def _make_segment(paragraph_id: int, text: str = "彼女は微笑んだ。"):
     )
 
 
-def _make_verdict(verdict: str, retry_instruction: str = "Fix tone.", confidence: dict | None = None):
-    return SimpleNamespace(
-        verdict=verdict,
-        retry_instruction=retry_instruction,
-        confidence=confidence or {"score": 0.8},
-    )
-
-
 async def _drain_queue(q: asyncio.Queue) -> list[dict]:
     events = []
     while True:
@@ -181,7 +173,7 @@ async def test_retry_loop_repolished_twice(seeded_book, async_session):
 
 
 @pytest.mark.asyncio
-async def test_retry_cap_accepts_after_3(seeded_book, async_session):
+async def test_fix_pass_cap_accepts_after_max_retries(seeded_book, async_session):
     paragraph_id = seeded_book["paragraph_id"]
     fake_segment = _make_segment(paragraph_id)
     always_fix_pass = SegmentVerdict(verdict="fix_pass", instruction="Still not great.")

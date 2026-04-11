@@ -225,3 +225,75 @@ async def test_full_retry_then_fix_pass_uses_both_budgets(patched_pipeline):
     assert cp["retry_count_fix_pass"] == 1
     assert cp["retry_count_full_pipeline"] == 1
     assert cp["retry_flag"] is False
+
+
+@pytest.mark.asyncio
+async def test_fix_pass_exhaustion_sets_retry_flag(patched_pipeline):
+    """After 2 failed fix_pass retries the segment emits with retry_flag=True."""
+    from app.pipeline.runner_v2 import run_pipeline_v2
+    verdicts = [
+        SegmentVerdict(verdict="fix_pass", instruction="Fix A"),
+        SegmentVerdict(verdict="fix_pass", instruction="Fix B"),
+        SegmentVerdict(verdict="fix_pass", instruction="Fix C"),  # budget exhausted
+    ]
+    with patched_pipeline(
+        verdict_sequence=verdicts,
+        stage3_outputs=["polished v1", "polished v2", "polished v3"],
+    ) as ctx:
+        q: asyncio.Queue = asyncio.Queue()
+        await run_pipeline_v2(book_id=1, ws_queue=q, session=MagicMock())
+        events = await _drain(q)
+
+    cp = ctx["checkpoints"][0]
+    assert cp["retry_count_fix_pass"] == 2  # MAX_FIX_PASS_RETRIES
+    assert cp["retry_count_full_pipeline"] == 0
+    assert cp["retry_flag"] is True
+    # Pipeline completes normally — segment is not blocked
+    event_names = [e["event"] for e in events]
+    assert "segment_complete" in event_names
+    assert "pipeline_complete" in event_names
+    seg_complete = next(e for e in events if e["event"] == "segment_complete")
+    assert seg_complete["retry_flag"] is True
+    # reviewer_notes stamped with exhaustion reason
+    assert cp.get("reviewer_notes") is not None
+    assert "retry budget exhausted" in cp["reviewer_notes"].lower()
+    assert "Fix C" in cp["reviewer_notes"]
+
+
+@pytest.mark.asyncio
+async def test_full_retry_exhaustion_sets_retry_flag(patched_pipeline):
+    """After 1 failed full_retry the segment emits with retry_flag=True."""
+    from app.pipeline.runner_v2 import run_pipeline_v2
+    verdicts = [
+        SegmentVerdict(verdict="full_retry", instruction="Fix wrong speaker"),
+        SegmentVerdict(verdict="full_retry", instruction="Still wrong"),  # budget exhausted
+    ]
+    with patched_pipeline(verdict_sequence=verdicts) as ctx:
+        q: asyncio.Queue = asyncio.Queue()
+        await run_pipeline_v2(book_id=1, ws_queue=q, session=MagicMock())
+        await _drain(q)
+
+    cp = ctx["checkpoints"][0]
+    assert cp["retry_count_fix_pass"] == 0
+    assert cp["retry_count_full_pipeline"] == 1  # MAX_FULL_PIPELINE_RETRIES
+    assert cp["retry_flag"] is True
+    # reviewer_notes gets stamped explaining the exhaustion
+    assert cp.get("reviewer_notes") is not None
+    assert "retry budget exhausted" in cp["reviewer_notes"].lower()
+    assert "Still wrong" in cp["reviewer_notes"]
+
+
+@pytest.mark.asyncio
+async def test_retry_flag_not_set_when_budget_not_exhausted(patched_pipeline):
+    from app.pipeline.runner_v2 import run_pipeline_v2
+    verdicts = [
+        SegmentVerdict(verdict="fix_pass", instruction="small fix"),
+        SegmentVerdict(verdict="ok", instruction=""),
+    ]
+    with patched_pipeline(verdict_sequence=verdicts) as ctx:
+        q: asyncio.Queue = asyncio.Queue()
+        await run_pipeline_v2(book_id=1, ws_queue=q, session=MagicMock())
+        await _drain(q)
+
+    cp = ctx["checkpoints"][0]
+    assert cp["retry_flag"] is False

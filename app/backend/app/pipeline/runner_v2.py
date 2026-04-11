@@ -332,6 +332,11 @@ async def run_pipeline_v2(
                         segment.rag_context, segment_verdict.instruction,
                     )
 
+                    # NOTE: The Stage 1 → 2 → 3 ladder below mirrors the initial pass
+                    # earlier in the segment loop. If you change the initial ladder
+                    # (field names, call signatures, event payloads), update this
+                    # branch in lockstep.
+
                     # Stage 1 — full re-run with augmented context
                     if dry_run:
                         new_drafts = await make_dry_run_stage1_drafts(

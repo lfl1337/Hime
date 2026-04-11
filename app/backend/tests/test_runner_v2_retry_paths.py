@@ -182,11 +182,7 @@ async def test_full_retry_triggers_stage1_to_stage3_rerun(patched_pipeline, fake
     assert ctx["stage3"].await_count == 2
 
     # Second Stage 1 call receives the augmented rag_context with the instruction
-    second_stage1 = ctx["stage1"].call_args_list[1]
-    if "rag_context" in second_stage1.kwargs:
-        rag_ctx = second_stage1.kwargs["rag_context"]
-    else:
-        rag_ctx = second_stage1.args[1] if len(second_stage1.args) > 1 else ""
+    rag_ctx = ctx["stage1"].call_args_list[1].kwargs["rag_context"]
     assert "Retry instruction from prior review" in rag_ctx
     assert "speaker wrong" in rag_ctx
     # Original rag_context is preserved

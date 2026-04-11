@@ -235,6 +235,12 @@ class Stage4Aggregator:
                 _log.warning("[Stage4Aggregator] unknown verdict %r, defaulting to ok", verdict)
                 verdict = "ok"
             instruction = str(data.get("instruction") or "")
+            if verdict in ("fix_pass", "full_retry") and not instruction.strip():
+                _log.warning(
+                    "[Stage4Aggregator] verdict=%s with empty instruction — demoting to ok",
+                    verdict,
+                )
+                verdict = "ok"
             return SegmentVerdict(verdict=verdict, instruction=instruction)
         except Exception:  # noqa: BLE001
             _log.warning("[Stage4Aggregator] segment parse error — defaulting to ok")

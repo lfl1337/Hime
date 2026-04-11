@@ -410,6 +410,9 @@ async def run_pipeline_v2(
                 )
                 break
 
+            # Invariant: when retry_flag_exhausted is True, last_verdict and
+            # last_instruction have been assigned at least once (the loop only
+            # sets retry_flag_exhausted inside a verdict branch after aggregation).
             reviewer_notes_text: str | None = None
             if retry_flag_exhausted:
                 reviewer_notes_text = (

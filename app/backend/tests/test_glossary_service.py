@@ -2,12 +2,31 @@
 import pytest
 
 from app.database import AsyncSessionLocal, init_db
+from app.models import Book
 from app.services.glossary_service import GlossaryService
+
+# Book ids used by glossary tests below. Each test creates a glossary
+# referencing one of these ids; with FK enforcement (Phase 1 W2), the parent
+# Book rows MUST exist first — SQLite will reject orphan glossary inserts.
+_FIXTURE_BOOK_IDS = [42, 43, 44, 45, 46]
 
 
 @pytest.fixture(autouse=True)
 async def _db():
     await init_db()
+    # Seed the parent Book rows the glossary tests depend on.
+    # Idempotent: skip rows that already exist (autouse fixture runs per-test).
+    async with AsyncSessionLocal() as session:
+        for book_id in _FIXTURE_BOOK_IDS:
+            existing = await session.get(Book, book_id)
+            if existing is None:
+                session.add(Book(
+                    id=book_id,
+                    title=f"Glossary test fixture {book_id}",
+                    author="test",
+                    file_path=f"/tmp/glossary_fixture_book_{book_id}.epub",
+                ))
+        await session.commit()
 
 
 @pytest.mark.asyncio

@@ -161,12 +161,94 @@ async def _checkpoint_segment(
         await session.commit()
 
 
+async def _run_ladder(
+    segment_source_jp: str,
+    rag_context: str,
+    glossary_context: str,
+    paragraph_id: int,
+    ws_queue: asyncio.Queue,
+    dry_run: bool,
+    *,
+    retry_kind: str | None = None,
+    full_retry_count: int | None = None,
+    # dry-run callables — only used when dry_run=True
+    _make_drafts=None,
+    _merge=None,
+    _polish=None,
+) -> tuple[dict[str, str], str, str]:
+    """Run Stage 1 → Stage 2 → Stage 3 for one segment.
+
+    Returns (drafts_dict, merged_str, polished_str).
+    retry_kind and full_retry_count, if set, are included in WS events.
+    """
+    # Stage 1
+    if dry_run:
+        drafts = await _make_drafts(
+            segment=segment_source_jp,
+            rag_context=rag_context,
+            glossary_context=glossary_context,
+        )
+    else:
+        drafts = await _stage1.run_stage1(
+            segment=segment_source_jp,
+            rag_context=rag_context,
+            glossary_context=glossary_context,
+        )
+    s1_event: dict = {"event": "stage1_complete", "paragraph_id": paragraph_id}
+    if retry_kind is not None:
+        s1_event["retry_kind"] = retry_kind
+    if full_retry_count is not None:
+        s1_event["full_retry_count"] = full_retry_count
+    await ws_queue.put(s1_event)
+
+    drafts_dict: dict[str, str] = {
+        "qwen32b": drafts.qwen32b or "",
+        "translategemma": drafts.translategemma12b or "",
+        "qwen35_9b": drafts.qwen35_9b or "",
+        "gemma4_e4b": drafts.gemma4_e4b or "",
+        "jmdict": drafts.jmdict,
+    }
+
+    # Stage 2
+    if dry_run:
+        merged_str = await _merge(drafts_dict, rag_context, glossary_context)
+    else:
+        merged_str = await _stage2.merge(drafts_dict, rag_context, glossary_context)
+    s2_event: dict = {"event": "stage2_complete", "paragraph_id": paragraph_id}
+    if retry_kind is not None:
+        s2_event["retry_kind"] = retry_kind
+    if full_retry_count is not None:
+        s2_event["full_retry_count"] = full_retry_count
+    await ws_queue.put(s2_event)
+
+    # Stage 3
+    if dry_run:
+        polished_str = await _polish(merged_str, glossary_context)
+    else:
+        polished_str = await _stage3.polish(merged_str, glossary_context)
+    s3_event: dict = {"event": "stage3_complete", "paragraph_id": paragraph_id}
+    if retry_kind is not None:
+        s3_event["retry_kind"] = retry_kind
+    if full_retry_count is not None:
+        s3_event["full_retry_count"] = full_retry_count
+    await ws_queue.put(s3_event)
+
+    return drafts_dict, merged_str, polished_str
+
+
 async def run_pipeline_v2(
     book_id: int,
     ws_queue: asyncio.Queue,
     session: AsyncSession,
 ) -> None:
-    """Full book-level pipeline v2 coroutine."""
+    """Full book-level pipeline v2 coroutine.
+
+    The `session` parameter is used only for preprocess_book() (reads) and
+    export_book() (reads + epub assembly). Segment translation writes are
+    persisted by _checkpoint_segment(), which opens its own AsyncSessionLocal
+    session per segment to avoid holding a long-lived write transaction across
+    model inference calls.
+    """
     try:
         segments = await _preprocessor.preprocess_book(book_id, session)
         total = len(segments)
@@ -195,48 +277,19 @@ async def run_pipeline_v2(
                 "total": total,
             })
 
-            # Stage 1: pass fields from PreprocessedSegment
-            if dry_run:
-                drafts = await make_dry_run_stage1_drafts(
-                    segment=segment.source_jp,
-                    rag_context=segment.rag_context,
-                    glossary_context=segment.glossary_context,
-                )
-            else:
-                drafts = await _stage1.run_stage1(
-                    segment=segment.source_jp,
-                    rag_context=segment.rag_context,
-                    glossary_context=segment.glossary_context,
-                )
-            await ws_queue.put({"event": "stage1_complete", "paragraph_id": paragraph_id})
-
-            # Stage 2: convert Stage1Drafts to dict with keys matching merger_messages()
-            drafts_dict: dict[str, str] = {
-                "qwen32b": drafts.qwen32b or "",
-                "translategemma": drafts.translategemma12b or "",
-                "qwen35_9b": drafts.qwen35_9b or "",
-                "gemma4_e4b": drafts.gemma4_e4b or "",
-                "jmdict": drafts.jmdict,
-            }
-            if dry_run:
-                merged_str = await dry_run_stage2_merge(drafts_dict, segment.rag_context, segment.glossary_context)
-            else:
-                merged_str = await _stage2.merge(drafts_dict, segment.rag_context, segment.glossary_context)
-            await ws_queue.put({"event": "stage2_complete", "paragraph_id": paragraph_id})
-
-            # Stage 3: polish(merged, glossary_context, retry_instruction="")
-            if dry_run:
-                polished_str = await dry_run_stage3_polish(merged_str, segment.glossary_context)
-            else:
-                polished_str = await _stage3.polish(merged_str, segment.glossary_context)
-            await ws_queue.put({"event": "stage3_complete", "paragraph_id": paragraph_id})
+            # Stage 1 → 2 → 3 initial pass
+            drafts_dict, current_merged, current_polished = await _run_ladder(
+                segment.source_jp, segment.rag_context, segment.glossary_context,
+                paragraph_id, ws_queue, dry_run,
+                _make_drafts=make_dry_run_stage1_drafts if dry_run else None,
+                _merge=dry_run_stage2_merge if dry_run else None,
+                _polish=dry_run_stage3_polish if dry_run else None,
+            )
 
             # Stage 4 — two-path retry dispatch
             fix_pass_count = 0
             full_retry_count = 0
             retry_flag_exhausted = False
-            current_polished = polished_str
-            current_merged = merged_str
             last_verdict: str = "ok"
             last_instruction: str = ""
             confidence_log: dict = {"cycles": []}
@@ -336,71 +389,15 @@ async def run_pipeline_v2(
                         segment.rag_context, segment_verdict.instruction,
                     )
 
-                    # NOTE: The Stage 1 → 2 → 3 ladder below mirrors the initial pass
-                    # earlier in the segment loop. If you change the initial ladder
-                    # (field names, call signatures, event payloads), update this
-                    # branch in lockstep.
-
-                    # Stage 1 — full re-run with augmented context
-                    if dry_run:
-                        new_drafts = await make_dry_run_stage1_drafts(
-                            segment=segment.source_jp,
-                            rag_context=augmented_rag,
-                            glossary_context=segment.glossary_context,
-                        )
-                    else:
-                        new_drafts = await _stage1.run_stage1(
-                            segment=segment.source_jp,
-                            rag_context=augmented_rag,
-                            glossary_context=segment.glossary_context,
-                        )
-                    await ws_queue.put({
-                        "event": "stage1_complete",
-                        "paragraph_id": paragraph_id,
-                        "retry_kind": "full_retry",
-                        "full_retry_count": full_retry_count,
-                    })
-
-                    new_drafts_dict: dict[str, str] = {
-                        "qwen32b": new_drafts.qwen32b or "",
-                        "translategemma": new_drafts.translategemma12b or "",
-                        "qwen35_9b": new_drafts.qwen35_9b or "",
-                        "gemma4_e4b": new_drafts.gemma4_e4b or "",
-                        "jmdict": new_drafts.jmdict,
-                    }
-
-                    # Stage 2 — merge with same augmented rag_context
-                    if dry_run:
-                        current_merged = await dry_run_stage2_merge(
-                            new_drafts_dict, augmented_rag, segment.glossary_context,
-                        )
-                    else:
-                        current_merged = await _stage2.merge(
-                            new_drafts_dict, augmented_rag, segment.glossary_context,
-                        )
-                    await ws_queue.put({
-                        "event": "stage2_complete",
-                        "paragraph_id": paragraph_id,
-                        "retry_kind": "full_retry",
-                        "full_retry_count": full_retry_count,
-                    })
-
-                    # Stage 3 — fresh polish, NO fix_pass retry_instruction because
-                    # the instruction has already flowed through Stage 1 via rag_context.
-                    if dry_run:
-                        current_polished = await dry_run_stage3_polish(
-                            current_merged, segment.glossary_context,
-                        )
-                    else:
-                        current_polished = await _stage3.polish(
-                            current_merged, segment.glossary_context,
-                        )
-                    await ws_queue.put({
-                        "event": "stage3_complete",
-                        "paragraph_id": paragraph_id,
-                        "retry_kind": "full_retry",
-                        "full_retry_count": full_retry_count,
-                    })
+                    _, current_merged, current_polished = await _run_ladder(
+                        segment.source_jp, augmented_rag, segment.glossary_context,
+                        paragraph_id, ws_queue, dry_run,
+                        retry_kind="full_retry",
+                        full_retry_count=full_retry_count,
+                        _make_drafts=make_dry_run_stage1_drafts if dry_run else None,
+                        _merge=dry_run_stage2_merge if dry_run else None,
+                        _polish=dry_run_stage3_polish if dry_run else None,
+                    )
                     continue
 
                 # Defensive: unknown verdict → emit as-is

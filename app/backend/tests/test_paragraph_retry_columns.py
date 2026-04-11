@@ -41,7 +41,14 @@ async def test_paragraph_retry_defaults(db_session):
 
 
 @pytest.mark.asyncio
-async def test_migration_adds_retry_columns_to_existing_db(db_session):
+async def test_retry_columns_exist_in_schema(db_session):
+    """Verify all 5 Stage 4 retry-tracking columns are present in the paragraphs table.
+
+    Note: this test runs against a fresh SQLite created by create_all(), so it
+    verifies ORM schema completeness, NOT the ALTER TABLE migration path.
+    The ALTER TABLE path in _V200_PARAGRAPH_RETRY_COLS is exercised by a
+    pre-existing DB, which this test does not simulate.
+    """
     rows = (await db_session.execute(text("PRAGMA table_info(paragraphs)"))).fetchall()
     existing = {r[1] for r in rows}
     for col in (
@@ -51,4 +58,4 @@ async def test_migration_adds_retry_columns_to_existing_db(db_session):
         "aggregator_verdict",
         "aggregator_instruction",
     ):
-        assert col in existing, f"paragraphs table is missing column {col} after migration"
+        assert col in existing, f"paragraphs table is missing column {col}"

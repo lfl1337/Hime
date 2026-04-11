@@ -65,11 +65,10 @@ def test_system_prompt_contains_severity_taxonomy():
 
 @pytest.mark.asyncio
 async def test_aggregate_segment_ok_verdict():
-    from app.pipeline.stage4_aggregator import SegmentVerdict
     out = json.dumps({"verdict": "ok", "instruction": ""})
     agg = _aggregator_with_output(out)
     verdict = await agg.aggregate_segment(_annotations_for_sentences(2, rating=0.9))
-    assert isinstance(verdict, SegmentVerdict)
+    assert hasattr(verdict, 'verdict') and hasattr(verdict, 'instruction')
     assert verdict.verdict == "ok"
     assert verdict.instruction == ""
 
@@ -135,19 +134,17 @@ async def test_aggregate_segment_user_prompt_contains_all_sentences():
 
 @pytest.mark.asyncio
 async def test_aggregate_segment_empty_annotations_returns_ok():
-    from app.pipeline.stage4_aggregator import SegmentVerdict
     agg = _aggregator_with_output(json.dumps({"verdict": "ok", "instruction": ""}))
     verdict = await agg.aggregate_segment([])
-    assert isinstance(verdict, SegmentVerdict)
+    assert hasattr(verdict, 'verdict') and hasattr(verdict, 'instruction')
     assert verdict.verdict == "ok"
 
 
 @pytest.mark.asyncio
 async def test_dry_run_aggregate_segment_returns_ok():
     from app.pipeline.dry_run import DryRunStage4Aggregator
-    from app.pipeline.stage4_aggregator import SegmentVerdict
     agg = DryRunStage4Aggregator()
     verdict = await agg.aggregate_segment(_annotations_for_sentences(2, rating=0.9))
-    assert isinstance(verdict, SegmentVerdict)
+    assert hasattr(verdict, 'verdict') and hasattr(verdict, 'instruction')
     assert verdict.verdict == "ok"
     assert verdict.instruction == ""

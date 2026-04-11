@@ -1,0 +1,15 @@
+{
+  "title": "Test Light Novel",
+  "author": "Test Author",
+  "language": "ja",
+  "chapters": [
+    {
+      "title": "Chapter 1: The Beginning",
+      "paragraphs": ["少女は朝の光の中で目を覚ました。", "窓の外で鳥が歌っていた。", "新しい一日が始まる。"]
+    },
+    {
+      "title": "Chapter 2: The Meeting",
+      "paragraphs": ["図書館で彼女に出会った。", "その瞬間、何かが変わった。", "二人は静かに本を読み始めた。"]
+    }
+  ]
+}

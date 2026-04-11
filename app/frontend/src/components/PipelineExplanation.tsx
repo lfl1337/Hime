@@ -1,29 +1,38 @@
 import { useState } from 'react'
 
-const TEXT = `Stage 1 — Drei Modelle übersetzen parallel:
-  \u2022 Qwen 2.5 32B   — fein-getuned auf JP\u2192EN Light Novels
-  \u2022 Gemma 3 12B    — Googles Architektur, andere Perspektive
-  \u2022 DeepSeek R1 32B — Reasoning-orientiert
-Plus: JMdict-Lexikon als algorithmischer Anker für Vollständigkeit
+const TEXT = `Pre-Processing:
+  \u2022 MeCab-Tokenisierung + JMdict-Lookup (algorithmisch, kein GPU)
+  \u2022 Glossar-Kontext (bucheigene Begriffe, Namen, Honorifics)
+  \u2022 RAG-Kontext (frühere Bände derselben Serie, wenn verfügbar)
 
-Stage 1.5 — Konsens:
-  Ein viertes Modell vergleicht alle drei Entwürfe und erstellt
-  eine Konsens-Übersetzung, die das Beste aus allen kombiniert.
+Stage 1 — 4 Modelle übersetzen parallel:
+  \u2022 Qwen2.5-32B + LoRA  — fein-getuned auf JP\u2192EN Light Novels
+  \u2022 TranslateGemma-12B  — Googles Übersetzungsarchitektur
+  \u2022 Qwen3.5-9B          — Reasoning-orientiert (non-thinking mode)
+  \u2022 Gemma4 E4B          — effizientes Google-Modell, andere Perspektive
 
-Stage 2 — Verfeinerung:
-  Qwen 2.5 72B verbessert Fluss und Nuance.
+Stage 2 — Merger:
+  TranslateGemma-27B fusioniert alle 4 Entwürfe + JMdict-Anker
+  + RAG- und Glossar-Kontext zu einer einzigen Übersetzung.
 
 Stage 3 — Politur:
-  Qwen 2.5 14B macht den finalen Schliff.
+  Qwen3-30B-A3B (MoE, non-thinking) macht den literarischen
+  Feinschliff: Fluss, Nuance, Register.
 
-Nach der Pipeline — Reader-Panel:
-  6 Leser-Personas prüfen das Ergebnis aus verschiedenen
-  Perspektiven (Namenskonsistenz, Register, Emotion, etc.)
-  und markieren Stellen für mögliche Überarbeitung.
+Stage 4 — Reader-Panel (Retry-Schleife):
+  15 Kritiker-Personas (Qwen3-2B) prüfen parallel:
+  Treue, Stil, Charakterstimmen, Yuri-Subtext, Lesbarkeit,
+  Grammatik, Pacing, Dialog, Atmosphäre, Subtext,
+  Kulturkontext, Honorifics u.a.
+  LFM2-24B aggregiert die Annotations zum Urteil:
+  \u2022 ok          \u2192 fertig
+  \u2022 fix_pass    \u2192 Stage 3 nochmal mit Feedback-Instruktion (max. 2×)
+  \u2022 full_retry  \u2192 Stage 1\u21922\u21923 komplett neu, Instruktion im RAG-Kontext (max. 1×)
+  Bei Budget-Erschöpfung: retry_flag gesetzt, Segment wird trotzdem übernommen.
 
-Wenn aktiv: RAG-Kontext aus früheren Bänden derselben Serie
-wird automatisch in Stage 1 eingespeist für konsistente
-Charakter- und Weltübersetzungen.`
+Post-Processing:
+  Absätze werden zu Kapiteltext zusammengefügt (Titel + Text).
+  Nicht übersetzte Absätze erhalten einen [untranslated]-Fallback.`
 
 export function PipelineExplanation() {
   const [open, setOpen] = useState(true)

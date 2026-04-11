@@ -9,7 +9,10 @@ from .stage4_reader import PersonaAnnotation
 
 _log = logging.getLogger(__name__)
 
-_AGGREGATOR_SYSTEM = """\
+_MAX_NEW_TOKENS = 128
+_SEGMENT_MAX_TOKENS = 256
+
+_AGGREGATOR_SYSTEM_PROMPT = """\
 You are the final quality aggregator for a JP->EN light novel translation review system.
 You will receive structured feedback from 15 specialist reader-critic personas about a
 single translated sentence.
@@ -72,6 +75,17 @@ Respond ONLY with a single JSON object (no markdown fences, no explanation, no p
   "verdict": "ok" | "fix_pass" | "full_retry",
   "instruction": "<one-sentence actionable retry instruction, or empty string if verdict is ok>"
 }"""
+
+
+def _strip_code_fence(raw: str) -> str:
+    """Remove markdown code fences from a JSON string."""
+    stripped = raw.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        # Remove first line (```json or ```) and last line (```)
+        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+        return "\n".join(inner).strip()
+    return stripped
 
 
 def _build_user_prompt(annotations: list[PersonaAnnotation]) -> str:
@@ -171,11 +185,11 @@ class Stage4Aggregator:
         torch.cuda.empty_cache()
         _log.info("[Stage4Aggregator] VRAM released.")
 
-    def _infer_one(self, user_prompt: str) -> str:
+    def _run_generation(self, system_prompt: str, user_prompt: str, max_new_tokens: int) -> str:
         import contextlib
         import torch  # type: ignore[import]
         messages = [
-            {"role": "system", "content": _AGGREGATOR_SYSTEM},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
         text = self._tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -185,7 +199,7 @@ class Stage4Aggregator:
         with _no_grad():
             output_ids = self._model.generate(
                 **inputs,
-                max_new_tokens=128,
+                max_new_tokens=max_new_tokens,
                 temperature=0.1,
                 do_sample=True,
                 eos_token_id=self._tokenizer.eos_token_id,
@@ -195,11 +209,11 @@ class Stage4Aggregator:
         new_tokens = output_ids[0][input_len:]
         return self._tokenizer.decode(new_tokens, skip_special_tokens=True)
 
+    def _infer_one(self, user_prompt: str) -> str:
+        return self._run_generation(_AGGREGATOR_SYSTEM_PROMPT, user_prompt, _MAX_NEW_TOKENS)
+
     def _parse_verdict(self, raw: str, sentence_id: int) -> AggregatorVerdict:
-        text = raw.strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:]).strip()
+        text = _strip_code_fence(raw)
         try:
             data = json.loads(text)
             return AggregatorVerdict(
@@ -224,10 +238,7 @@ class Stage4Aggregator:
         return self._parse_verdict(raw, sentence_id)
 
     def _parse_segment_verdict(self, raw: str) -> SegmentVerdict:
-        text = raw.strip()
-        if text.startswith("```"):
-            ls = text.splitlines()
-            text = "\n".join(ls[1:-1] if ls[-1].strip() == "```" else ls[1:]).strip()
+        text = _strip_code_fence(raw)
         try:
             data = json.loads(text)
             verdict = data.get("verdict", "ok")
@@ -248,31 +259,7 @@ class Stage4Aggregator:
             return SegmentVerdict(verdict="ok", instruction="")
 
     def _infer_segment(self, user_prompt: str) -> str:
-        """Like _infer_one but uses the segment-level system prompt."""
-        import contextlib
-        import torch  # type: ignore[import]
-        messages = [
-            {"role": "system", "content": _SEGMENT_AGGREGATOR_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ]
-        text = self._tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        raw_inputs = self._tokenizer(text, return_tensors="pt")
-        inputs = raw_inputs.to(self._model.device) if hasattr(raw_inputs, "to") else raw_inputs
-        _no_grad = torch.no_grad if hasattr(torch, "no_grad") else contextlib.nullcontext
-        with _no_grad():
-            output_ids = self._model.generate(
-                **inputs,
-                max_new_tokens=256,
-                temperature=0.1,
-                do_sample=True,
-                eos_token_id=self._tokenizer.eos_token_id,
-            )
-        input_ids = inputs["input_ids"]
-        input_len = input_ids.shape[1] if hasattr(input_ids, "shape") else len(input_ids[0])
-        new_tokens = output_ids[0][input_len:]
-        return self._tokenizer.decode(new_tokens, skip_special_tokens=True)
+        return self._run_generation(_SEGMENT_AGGREGATOR_SYSTEM, user_prompt, _SEGMENT_MAX_TOKENS)
 
     async def aggregate_segment(self, annotations: list[PersonaAnnotation]) -> SegmentVerdict:
         """Condense all N_sentences x 15 persona annotations into ONE SegmentVerdict.

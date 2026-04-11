@@ -10,18 +10,24 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .core import paths as _paths
+from ..core import paths as _paths
 
 _HIME_DATA_DIR = os.environ.get("HIME_DATA_DIR")
 
 if _HIME_DATA_DIR:
     _ENV_FILE = Path(_HIME_DATA_DIR) / ".env"
 else:
-    _ENV_FILE = Path(__file__).parent.parent / ".env"  # dev: app/backend/.env
+    _ENV_FILE = Path(__file__).parent.parent.parent / ".env"  # dev: app/backend/.env
 
 
 class Settings(BaseSettings):
     port: int = 18420  # Hime-specific range (18420-18519) — avoids collision with other local apps
+
+    # Phase 4 — Pipeline dry-run mode (W8)
+    # When True, all Pipeline v2 stages use DryRunModel stubs instead of real models.
+    # Enable via HIME_DRY_RUN=1 env var.
+    hime_dry_run: bool = False
+
     # Legacy single-model inference (kept for /ws/translate backward compat)
     inference_url: str = "http://127.0.0.1:8080/v1"
     inference_model: str = "qwen2.5-14b-instruct"
@@ -102,6 +108,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
+        # P2-F3 fix: tolerate undeclared HIME_* / APP_* keys in .env so the
+        # root project .env can be loaded without upgrading every env-only
+        # variable (HIME_PROJECT_ROOT, HIME_BIND_HOST, HIME_BACKEND_PORT, etc.)
+        # into a declared Settings field.
+        extra="ignore",
     )
 
 

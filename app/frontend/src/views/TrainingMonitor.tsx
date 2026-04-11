@@ -217,11 +217,16 @@ function downsample<T>(data: T[], maxPoints: number): T[] {
 // ---------------------------------------------------------------------------
 
 const MODEL_TO_LORA_DIR: Record<string, string> = {
-  qwen32b:  'Qwen2.5-32B-Instruct',
-  qwen14b:  'Qwen2.5-14B-Instruct',
-  qwen72b:  'Qwen2.5-72B-Instruct',
-  gemma27b: 'Gemma-3-27B-IT',
-  deepseek: 'DeepSeek-R1-Distill-Qwen-32B',
+  // v2 LoRA-trained models (Stage 1 fine-tuning)
+  'qwen32b':           'Qwen2.5-32B-Instruct',
+  'translategemma12b': 'translategemma-12b',
+  'qwen35-9b':         'Qwen3.5-9B',
+  // v1 backward-compat (kept for existing checkpoints)
+  'qwen14b':           'Qwen2.5-14B-Instruct',
+  'qwen72b':           'Qwen2.5-72B-Instruct',
+  'gemma27b':          'Gemma-3-27B-IT',
+  'deepseek':          'DeepSeek-R1-Distill-Qwen-32B',
+  // NOTE: Qwen3-30B-A3B (Stage 3 polish) is used zero-shot — no LoRA training
 }
 
 // ---------------------------------------------------------------------------
@@ -1224,11 +1229,13 @@ export function TrainingMonitor() {
                 <label className="block text-xs text-zinc-500 mb-1">Model</label>
                 <div className="flex gap-1 flex-wrap">
                   {[
-                    { key: 'qwen32b', label: 'Qwen2.5-32B' },
-                    { key: 'qwen14b', label: 'Qwen2.5-14B' },
-                    { key: 'qwen72b', label: 'Qwen2.5-72B' },
-                    { key: 'gemma27b', label: 'Gemma 3-27B' },
-                    { key: 'deepseek', label: 'DeepSeek-R1-32B' },
+                    { key: 'qwen32b',           label: 'Qwen2.5-32B+LoRA' },
+                    { key: 'translategemma12b',  label: 'TranslateGemma-12B' },
+                    { key: 'qwen35-9b',          label: 'Qwen3.5-9B' },
+                    { key: 'qwen14b',            label: 'Qwen2.5-14B (v1)' },
+                    { key: 'qwen72b',            label: 'Qwen2.5-72B (v1)' },
+                    { key: 'gemma27b',           label: 'Gemma 3-27B (v1)' },
+                    { key: 'deepseek',           label: 'DeepSeek-R1 (v1)' },
                   ].map(opt => (
                     <button
                       key={opt.key}

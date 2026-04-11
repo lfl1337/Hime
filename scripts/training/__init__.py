@@ -1,0 +1,1 @@
+"""Hime training plugin package."""

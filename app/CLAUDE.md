@@ -4,21 +4,26 @@
 
 Hime is a **local-first** Japanese-to-English light novel translation desktop app (yuri focus). It runs entirely on the user's machine with no cloud backend, no external auth, and no third-party storage. Translation is performed by local AI models served via llama.cpp or vllm — no data leaves the machine.
 
-## Architecture
+## Architecture (v2.0.0)
 
 ```
 User
   └── Tauri desktop app (frontend/)
         └── HTTP/WebSocket → FastAPI (backend/, 127.0.0.1:18420)
               ├── SQLite (source texts, translations, EPUB library)
-              ├── Pipeline (backend/app/pipeline/)
-              │     ├── Stage 1 — 3 parallel translators
-              │     │     ├── Gemma 3 12B (port 8001)
-              │     │     ├── DeepSeek R1 32B (port 8002)
-              │     │     └── Qwen 2.5 32B (port 8003)
-              │     ├── Consensus — merger model (port 8003)
-              │     ├── Stage 2 — Qwen 2.5 72B refinement (port 8004)
-              │     └── Stage 3 — Qwen 2.5 14B final polish (port 8005)
+              ├── Pipeline v2 (backend/app/pipeline/)
+              │     ├── Pre-Processing — MeCab + JMdict + Glossary + RAG
+              │     ├── Stage 1 — 4 models in parallel (Unsloth/Transformers, local)
+              │     │     ├── Qwen2.5-32B+LoRA   (Draft translator, fine-tuned)
+              │     │     ├── TranslateGemma-12B  (Google translate architecture)
+              │     │     ├── Qwen3.5-9B          (Reasoning-oriented, non-thinking)
+              │     │     └── Gemma4-E4B          (Efficient Google model)
+              │     ├── Stage 2 — TranslateGemma-27B merger (zero-shot)
+              │     ├── Stage 3 — Qwen3-30B-A3B MoE polish (zero-shot, non-thinking)
+              │     └── Stage 4 — 15-persona Reader Panel + LFM2-24B aggregator
+              │           ├── fix_pass → Stage 3 retry (max 2×)
+              │           └── full_retry → Stage 1→2→3 re-run (max 1×)
+              ├── RAG Store (rag/store.py) — BGE-M3 embeddings, sqlite-vec KNN
               ├── Model Manager (services/model_manager.py) — health checks
               ├── Training Runner (services/training_runner.py) — LoRA fine-tuning
               └── Audit log (logs/audit.log)
@@ -33,8 +38,8 @@ User
 | CSS              | Tailwind CSS                  | Utility-first, dark theme, Japanese font support |
 | State            | Zustand + persist             | Lightweight, localStorage persistence            |
 | Database         | SQLite + SQLAlchemy async     | Local-first, zero setup, single user             |
-| AI Models        | Qwen2.5 / Gemma 3 / DeepSeek | Local-first; LoRA adapters trained on JP→EN data |
-| Inference        | llama.cpp / vllm              | OpenAI-compatible API on localhost               |
+| AI Models        | Qwen2.5-32B / TranslateGemma / Qwen3.5 / Qwen3-30B / LFM2 | Local-first; Stage 1 LoRA-trained |
+| Inference        | Unsloth (Stage 1/2) / vLLM or direct (Stage 3/4)           | No external API calls             |
 | Package mgr      | uv (backend), npm (frontend)  | Fast, lockfile support                           |
 
 ## Path Configuration
@@ -54,15 +59,11 @@ HIME_SCRIPTS_DIR      — scripts/
 
 ## Port Registry
 
-| Service                | Default Port | Range        |
-|------------------------|-------------|--------------|
-| Hime Vite (dev)        | 1420        | —            |
-| Hime FastAPI           | 18420       | 18420–18430  |
-| Gemma 3 12B            | 8001        | —            |
-| DeepSeek R1 32B        | 8002        | —            |
-| Qwen 2.5 32B           | 8003        | —            |
-| Qwen 2.5 72B           | 8004        | —            |
-| Qwen 2.5 14B           | 8005        | —            |
+| Service                | Default Port | Notes                                  |
+|------------------------|-------------|----------------------------------------|
+| Hime Vite (dev)        | 1420        | Proxies /api, /ws → FastAPI            |
+| Hime FastAPI           | 18420       | Range 18420–18430                      |
+| v1 model servers       | 8001–8005   | Not used in v2 pipeline (llama.cpp)    |
 
 ## Security Constraints (non-negotiable)
 
@@ -83,9 +84,10 @@ HIME_SCRIPTS_DIR      — scripts/
 | `backend/app/config.py`                  | Pydantic settings (reads .env)                   |
 | `backend/app/database.py`               | Async SQLAlchemy + inline migrations             |
 | `backend/app/models.py`                 | ORM: SourceText, Translation, Book, Chapter, etc |
-| `backend/app/pipeline/runner.py`         | 4-stage pipeline orchestrator                    |
+| `backend/app/pipeline/runner_v2.py`      | v2 pipeline orchestrator (4 stages + retry loop) |
+| `backend/app/pipeline/stage4_aggregator.py` | 15-persona panel + LFM2-24B verdict          |
 | `backend/app/pipeline/prompts.py`        | Template loader (disk → inline fallback)         |
-| `backend/app/services/model_manager.py`  | Health checks for all 6 pipeline models          |
+| `backend/app/services/model_manager.py`  | Health checks + v1 model port status             |
 | `backend/app/services/training_runner.py`| LoRA training subprocess management              |
 | `backend/app/services/epub_service.py`   | EPUB parsing, import, library management         |
 | `backend/app/websocket/streaming.py`     | Pipeline WebSocket streaming                     |

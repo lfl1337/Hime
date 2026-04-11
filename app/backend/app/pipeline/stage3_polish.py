@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import gc
 import logging
-import os
 import re
 import threading
-from pathlib import Path
 from typing import Any
 
 from .prompts import polish_messages
+from ..config.pipeline_v2 import STAGE3_MODEL_ID as _HF_MODEL_ID
+from ..config.pipeline_v2 import STAGE3_LOCAL_PATH as _LOCAL_MODEL_DIR
 
 _log = logging.getLogger(__name__)
 
@@ -74,13 +74,6 @@ def convert_jp_punctuation(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Model configuration
 # ---------------------------------------------------------------------------
-_HF_MODEL_ID = "Qwen/Qwen3-30B-A3B"
-_MODELS_DIR = Path(
-    os.environ.get("HIME_MODELS_DIR")
-    or Path(__file__).resolve().parents[4] / "modelle"
-)
-_LOCAL_MODEL_DIR = _MODELS_DIR / "qwen3-30b"
-
 _MAX_NEW_TOKENS = 1024
 _TEMPERATURE = 0.2
 

@@ -316,13 +316,83 @@ async def run_pipeline_v2(
                     continue
 
                 if segment_verdict.verdict == "full_retry":
-                    # Phase 4 stub: detected but not yet implemented. Phase 5 fills this in.
-                    _log.warning(
-                        "[runner_v2] paragraph %d received full_retry verdict; "
-                        "full-retry branch not yet wired — emitting current output",
-                        paragraph_id,
+                    if full_retry_count >= MAX_FULL_PIPELINE_RETRIES:
+                        retry_flag_exhausted = True
+                        _log.warning(
+                            "[runner_v2] paragraph %d exhausted full_retry budget (%d); "
+                            "emitting anyway and setting retry_flag",
+                            paragraph_id, MAX_FULL_PIPELINE_RETRIES,
+                        )
+                        break
+                    full_retry_count += 1
+                    # Inject the condensed instruction into rag_context; Stage 1
+                    # adapters read rag_context verbatim, so this threads through
+                    # all five adapters with zero adapter-internal changes.
+                    augmented_rag = _augment_rag_with_retry(
+                        segment.rag_context, segment_verdict.instruction,
                     )
-                    break
+
+                    # Stage 1 — full re-run with augmented context
+                    if dry_run:
+                        new_drafts = await make_dry_run_stage1_drafts(
+                            segment=segment.source_jp,
+                            rag_context=augmented_rag,
+                            glossary_context=segment.glossary_context,
+                        )
+                    else:
+                        new_drafts = await _stage1.run_stage1(
+                            segment=segment.source_jp,
+                            rag_context=augmented_rag,
+                            glossary_context=segment.glossary_context,
+                        )
+                    await ws_queue.put({
+                        "event": "stage1_complete",
+                        "paragraph_id": paragraph_id,
+                        "retry_kind": "full_retry",
+                        "full_retry_count": full_retry_count,
+                    })
+
+                    new_drafts_dict: dict[str, str] = {
+                        "qwen32b": new_drafts.qwen32b or "",
+                        "translategemma": new_drafts.translategemma12b or "",
+                        "qwen35_9b": new_drafts.qwen35_9b or "",
+                        "gemma4_e4b": new_drafts.gemma4_e4b or "",
+                        "jmdict": new_drafts.jmdict,
+                    }
+
+                    # Stage 2 — merge with same augmented rag_context
+                    if dry_run:
+                        current_merged = await dry_run_stage2_merge(
+                            new_drafts_dict, augmented_rag, segment.glossary_context,
+                        )
+                    else:
+                        current_merged = await _stage2.merge(
+                            new_drafts_dict, augmented_rag, segment.glossary_context,
+                        )
+                    await ws_queue.put({
+                        "event": "stage2_complete",
+                        "paragraph_id": paragraph_id,
+                        "retry_kind": "full_retry",
+                        "full_retry_count": full_retry_count,
+                    })
+
+                    # Stage 3 — fresh polish, NO fix_pass retry_instruction because
+                    # the instruction has already flowed through Stage 1 via rag_context.
+                    if dry_run:
+                        current_polished = await dry_run_stage3_polish(
+                            current_merged, segment.glossary_context,
+                        )
+                    else:
+                        current_polished = await _stage3.polish(
+                            current_merged, segment.glossary_context,
+                        )
+                    await ws_queue.put({
+                        "event": "stage3_complete",
+                        "paragraph_id": paragraph_id,
+                        "retry_kind": "full_retry",
+                        "full_retry_count": full_retry_count,
+                    })
+                    continue
 
                 # Defensive: unknown verdict → emit as-is
                 _log.warning(

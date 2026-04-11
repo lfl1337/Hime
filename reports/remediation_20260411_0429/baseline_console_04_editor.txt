@@ -1,0 +1,10 @@
+view: 04_editor
+url: http://127.0.0.1:23421/editor
+captured_at: 04:43:07
+message_count: 0
+error_count: 0
+warning_count: 0
+notes: No error/warning messages. (html2canvas debug noise filtered out — not from app code.)
+
+--- messages ---
+(none)

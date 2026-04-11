@@ -13,24 +13,14 @@ from __future__ import annotations
 
 import gc
 import logging
-import os
 import threading
-from pathlib import Path
 from typing import Any
 
 from .prompts import merger_messages
+from ..config.pipeline_v2 import STAGE2_MODEL_ID as _HF_MODEL_ID
+from ..config.pipeline_v2 import STAGE2_LOCAL_PATH as _LOCAL_MODEL_DIR
 
 _log = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Model configuration
-# ---------------------------------------------------------------------------
-_HF_MODEL_ID = "google/translategemma-27b-it"
-_MODELS_DIR = Path(
-    os.environ.get("HIME_MODELS_DIR")
-    or Path(__file__).resolve().parents[4] / "modelle"
-)
-_LOCAL_MODEL_DIR = _MODELS_DIR / "translategemma-27b"
 
 _MAX_NEW_TOKENS = 1024
 _TEMPERATURE = 0.3

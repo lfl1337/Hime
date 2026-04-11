@@ -1,0 +1,13 @@
+view: 02_translator
+url: http://127.0.0.1:23421/
+captured_at: 04:44:35
+message_count: 0
+error_count: 0
+warning_count: 0
+notes: |
+  Same route as 01_root. `/` IS the Translator view in this router (see
+  `app/frontend/src/App.tsx` line 111: `<Route path="/" element={<Translator />} />`).
+  Captured separately to satisfy the walkthrough sequence. Zero errors.
+
+--- messages ---
+(none)

@@ -1,0 +1,64 @@
+[
+  {
+    "series_id": 1,
+    "query": "少女",
+    "top_k": 3,
+    "results": [
+      {
+        "book_id": 1,
+        "chapter_id": 2,
+        "paragraph_id": 5,
+        "source_text": "放課後の教室は静まり返っていた。陽芽は窓際の席に座り、ノートの端に小さな花を描いていた。花びらの一つ一つに、美月の名前を書きたい衝動を抑えながら。",
+        "translated_text": "The classroom after school was dead silent. Hime sat by the window, sketching a small flower in the margin of her notebook — suppressing the urge to write Mitsuki's name on each petal.",
+        "distance": 1.045973300933838
+      },
+      {
+        "book_id": 1,
+        "chapter_id": 2,
+        "paragraph_id": 6,
+        "source_text": "「ねえ、陽芽」突然、背後から声がかかった。振り返ると、果乃子が腕を組んで立っていた。「美月のこと、好きなんでしょ？隠しても無駄よ」",
+        "translated_text": "\"Hey, Hime.\" A voice came from behind without warning. She turned to find Kanoko standing with arms crossed. \"You're in love with Mitsuki, aren't you? No use hiding it.\"",
+        "distance": 1.0644030570983887
+      },
+      {
+        "book_id": 1,
+        "chapter_id": 1,
+        "paragraph_id": 4,
+        "source_text": "「陽芽ちゃん、今日はいつもより早いね」美月は紅茶のカップを差し出しながら、少しだけ首を傾げた。その仕草がまた、胸を打つ。",
+        "translated_text": "\"Hime-chan, you're earlier than usual today.\" Mitsuki tilted her head slightly as she offered the teacup. That gesture struck her heart once again.",
+        "distance": 1.0761568546295166
+      }
+    ]
+  },
+  {
+    "series_id": 2,
+    "query": "剣",
+    "top_k": 3,
+    "results": [
+      {
+        "book_id": 2,
+        "chapter_id": 1,
+        "paragraph_id": 103,
+        "source_text": "安達は島村の横顔を盗み見た。彼女の髪が風に揺れるのを見て、心臓がうるさくなった。この距離が、近すぎるのか遠すぎるのか、分からなかった。",
+        "translated_text": "Adachi stole a glance at Shimamura's profile. Watching her hair sway in the breeze, her heart grew loud. She couldn't tell if this distance between them was too close or too far.",
+        "distance": 1.1342853307724
+      },
+      {
+        "book_id": 2,
+        "chapter_id": 2,
+        "paragraph_id": 104,
+        "source_text": "日曜日、安達は初めて島村を遊びに誘った。映画館の暗がりの中、二人の肩が触れた。安達は動けなかった。動きたくなかった。",
+        "translated_text": "On Sunday, Adachi invited Shimamura to hang out for the first time. In the darkness of the movie theater, their shoulders touched. Adachi couldn't move. She didn't want to.",
+        "distance": 1.1412694454193115
+      },
+      {
+        "book_id": 2,
+        "chapter_id": 1,
+        "paragraph_id": 102,
+        "source_text": "島村は卓球のラケットを回しながら、窓の外を眺めていた。「安達さんって、いつもここにいるよね」「島村さんもでしょ」二人は顔を見合わせて、少しだけ笑った。",
+        "translated_text": "Shimamura twirled a ping-pong paddle while gazing out the window. \"Adachi-san, you're always here, aren't you?\" \"So are you, Shimamura-san.\" They looked at each other and shared a small laugh.",
+        "distance": 1.1601287126541138
+      }
+    ]
+  }
+]

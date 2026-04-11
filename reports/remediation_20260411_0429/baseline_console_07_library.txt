@@ -1,0 +1,16 @@
+view: 07_library
+url: http://127.0.0.1:23421/ (Library tab active)
+captured_at: 04:44:55
+message_count: 0
+error_count: 0
+warning_count: 0
+notes: |
+  Same route as 01_root and 02_translator. The Library component is the default
+  left-panel view under Translator. The test backend created a fresh empty
+  /tmp/hime.db (the prod-DB copy at /tmp/hime_baseline.db was NOT consumed
+  because the backend reads hime.db directly from HIME_DATA_DIR). Library
+  therefore shows the empty-state "Import an EPUB to get started" message.
+  Zero errors.
+
+--- messages ---
+(none)

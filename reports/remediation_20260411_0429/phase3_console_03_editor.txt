@@ -1,0 +1,20 @@
+view: 03_editor
+url: http://127.0.0.1:23421/editor
+app_error_count: 0
+app_warning_count: 0
+extension_warning_count: 2
+notes: |
+  Two [WARNING] messages from chrome-extension://.../installHook.js (React
+  DevTools extension) about React Router v7 future flags. Source is NOT
+  app code (source file path = chrome-extension://gpphkfbcpidddadnkolkpfckpihlkkil/build/installHook.js).
+  These are environmental artifacts from the React DevTools browser extension
+  and are not regressions from Phase 3 code changes — Task 3.5 (config.py),
+  Task 3.6 (rag/store.py), and Task 3.7 (conftest.py) cannot have introduced
+  React Router warnings because they touch only backend Python code.
+  App-code errors/warnings: zero. Editor view renders correctly: "Translation
+  Editor" heading + empty-state message "Select a book from the Translator
+  tab to review and edit translations here."
+
+--- messages ---
+[WARNING] React Router Future Flag Warning: React Router will begin wrapping state updates in React.startTransition in v7 (source: chrome-extension://gpphkfbcpidddadnkolkpfckpihlkkil/build/installHook.js — React DevTools extension, not app code)
+[WARNING] React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7 (source: chrome-extension://gpphkfbcpidddadnkolkpfckpihlkkil/build/installHook.js — React DevTools extension, not app code)

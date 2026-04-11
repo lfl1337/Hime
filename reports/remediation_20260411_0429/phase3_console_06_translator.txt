@@ -1,0 +1,13 @@
+view: 06_translator
+url: http://127.0.0.1:23421/
+app_error_count: 0
+app_warning_count: 0
+extension_warning_count: 0
+notes: |
+  Zero errors/warnings. Translator/Library default view renders with
+  sorting tabs (Recently added / By progress / By title), Import EPUB button,
+  drag & drop area, and the empty-state message "Import an EPUB to get started".
+  Clean temp test DB has zero books — this is expected baseline behavior.
+
+--- messages ---
+(none)

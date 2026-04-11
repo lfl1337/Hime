@@ -9,15 +9,24 @@
   "colorGroups": [
     {
       "query": "tag:#hime",
-      "color": { "a": 1, "rgb": 14870768 }
+      "color": {
+        "a": 1,
+        "rgb": 14870768
+      }
     },
     {
       "query": "tag:#series-1",
-      "color": { "a": 1, "rgb": 8141037 }
+      "color": {
+        "a": 1,
+        "rgb": 8141037
+      }
     },
     {
       "query": "tag:#series-2",
-      "color": { "a": 1, "rgb": 960929 }
+      "color": {
+        "a": 1,
+        "rgb": 960929
+      }
     }
   ],
   "collapse-display": false,
@@ -25,6 +34,11 @@
   "textFadeMultiplier": 0,
   "nodeSizeMultiplier": 1.2,
   "lineSizeMultiplier": 1,
-  "scale": 1,
-  "close": false
+  "collapse-forces": true,
+  "centerStrength": 0.518713248970312,
+  "repelStrength": 10,
+  "linkStrength": 1,
+  "linkDistance": 250,
+  "scale": 0.36288736930121107,
+  "close": true
 }

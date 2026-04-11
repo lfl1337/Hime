@@ -98,17 +98,19 @@ def sample_book_fixture() -> Path:
 
 @pytest.fixture
 async def db_session():
-    """Function-scoped async SQLAlchemy session against the isolated test DB.
+    """Function-scoped async SQLAlchemy session with SAVEPOINT isolation.
 
-    Yields a session bound to the same temp SQLite that `ensure_db_initialized`
-    created. The session is rolled back and closed on teardown so rows created
-    by one test don't leak into another (best-effort — some tests commit).
+    Wraps each test in a SAVEPOINT (begin_nested). Any commit() inside the
+    test becomes a SAVEPOINT RELEASE — not a real commit — so the outer
+    rollback undoes all writes unconditionally. This prevents test-order
+    pollution from tests that call session.commit().
     """
     from app.database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.rollback()
-            await session.close()
+        async with session.begin():
+            nested = await session.begin_nested()
+            try:
+                yield session
+            finally:
+                await nested.rollback()

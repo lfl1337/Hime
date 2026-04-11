@@ -18,7 +18,12 @@ def _enable_sqlite_fks(dbapi_connection, connection_record):
     SQLite disables FKs by default; this listener flips them on for every
     low-level DBAPI connection (including aiosqlite), and the PRAGMA persists
     for the lifetime of that connection.
+
+    Guard: only runs for SQLite connections — avoids a syntax error if the
+    engine is ever pointed at PostgreSQL or another dialect.
     """
+    if "sqlite" not in type(dbapi_connection).__module__:
+        return
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys = ON")
     cursor.close()

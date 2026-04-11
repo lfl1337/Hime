@@ -1,26 +1,32 @@
 import { useState } from 'react'
 
-const TEXT = `Modulares Training
+const TEXT = `Modulares Training (v2)
 
-Jedes Pipeline-Modell wird unabhängig trainiert als LoRA-Adapter:
+Nur Stage-1-Modelle erhalten LoRA-Adapter. Alle anderen
+Stufen sind Zero-Shot und brauchen kein Training.
 
-  Stage 1 — Übersetzer
-    \u2022 Qwen 2.5 32B    (~7 Tage, läuft jetzt)
-    \u2022 Gemma 3 12B     (~2 Tage Cloud)
-    \u2022 DeepSeek R1 32B (~3 Tage Cloud)
+  Stage 1 — 3 Übersetzer (LoRA fine-tuned)
+    \u2022 Qwen2.5-32B+LoRA     (~7 Tage, GPU lokal)
+    \u2022 TranslateGemma-12B   (~2 Tage, Transformers)
+    \u2022 Qwen3.5-9B           (~1 Tag, Unsloth)
 
-  Stage 2 — Refinement
-    \u2022 Qwen 2.5 72B    (~5 Tage Cloud)
+  Stage 2 — Merger (kein Training)
+    \u2022 TranslateGemma-27B   (Zero-Shot)
 
-  Stage 3 — Polish
-    \u2022 Qwen 2.5 14B    (~1 Tag Cloud)
+  Stage 3 — Polish (kein Training)
+    \u2022 Qwen3-30B-A3B (MoE)  (Zero-Shot, non-thinking)
 
-Trainingsdaten kommen aus: \${HIME_TRAINING_DATA_DIR}
-Curriculum Learning erweitert den Datensatz automatisch
-wenn Overfitting erkannt wird (Score 0.70 \u2192 0.62 \u2192 0.55).
+  Stage 4 — Reader-Panel (kein Training)
+    \u2022 Qwen3-2B \u00d7 15 Personas (Zero-Shot)
+    \u2022 LFM2-24B Aggregator  (Zero-Shot)
 
-Auto-Resume: Bei Crashes wird automatisch vom letzten
-gültigen Checkpoint fortgesetzt. Kein Datenverlust mehr.`
+Trainingsdaten: \${HIME_TRAINING_DATA_DIR}
+Curriculum Learning (jparacrawl_500k → hime_training_all)
+erweitert den Datensatz automatisch bei Overfitting
+(Score 0.70 \u2192 0.62 \u2192 0.55).
+
+Auto-Resume: Beim nächsten Start wird automatisch vom
+letzten Checkpoint fortgesetzt. Kein Datenverlust.`
 
 export function TrainingExplanation() {
   const [open, setOpen] = useState(false)

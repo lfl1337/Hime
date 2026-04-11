@@ -1,0 +1,11 @@
+view: 03_comparison
+url: http://127.0.0.1:23421/comparison
+captured_at: 04:42:36
+message_count: 1
+error_count: 0
+warning_count: 0
+notes: html2canvas DEBUG messages filtered out (tool noise).
+
+--- messages ---
+[1] [04:42:36] [DEBUG] (http://127.0.0.1:23421/src/api/client.ts:77:10)
+[client] baseUrl = http://127.0.0.1:23421 (dev/proxy mode)

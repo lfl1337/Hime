@@ -22,6 +22,7 @@ async def export(
     body: FlywheelExportRequest,
     session: AsyncSession = Depends(get_session),
 ) -> FlywheelExportResponse:
+    # W5: Backend-only/CLI — no frontend caller as of v1.1.2; planned for training flywheel UI
     svc = FlywheelService(session)
     count = await svc.export_reviewed_to_training_data(min_quality=body.min_quality)
     return FlywheelExportResponse(new_entries=count)

@@ -44,6 +44,7 @@ class QueryResponse(BaseModel):
 
 @router.post("/query", response_model=QueryResponse)
 async def query(body: QueryRequest) -> QueryResponse:
+    # W5: Backend-only/CLI — no frontend caller as of v1.1.2; planned for RAG panel
     chunks = await retrieve_top_k(body.series_id, body.text, body.top_k)
     return QueryResponse(chunks=chunks)
 
@@ -85,7 +86,10 @@ class VaultSyncResponse(BaseModel):
 
 @router.post("/vault/sync", response_model=list[VaultSyncResponse])
 async def vault_sync(series_id: int | None = None) -> list[VaultSyncResponse]:
-    """Sync RAG index into obsidian-vault/. Incremental — only new chunks written."""
+    """Sync RAG index into obsidian-vault/. Incremental — only new chunks written.
+
+    W5: Backend-only/CLI — no frontend caller as of v1.1.2; planned for settings panel.
+    """
     from ..rag.vault_exporter import sync_series
 
     if series_id is not None:

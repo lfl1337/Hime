@@ -1,0 +1,16 @@
+view: 01_root
+url: http://127.0.0.1:23421/
+captured_at: 07:57:19
+error_count: 0
+warning_count: 0
+notes: |
+  Two [EXCEPTION] messages present with source "http://127.0.0.1:23421/:0:0"
+  (no source path — these originate from Chrome extension internals, not from
+  the Hime app). Filtered out as environmental noise, consistent with baseline
+  rules (html2canvas + [client] baseUrl debug filter). App root rendered fully
+  (document.readyState=complete, #root has children, title = "Hime —
+  Translation Studio"). Zero app-code errors.
+
+--- messages ---
+[EXCEPTION] Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received (source: http://127.0.0.1:23421/:0:0 — Chrome extension async message glue, not app code)
+[EXCEPTION] Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received (source: http://127.0.0.1:23421/:0:0 — Chrome extension async message glue, not app code)

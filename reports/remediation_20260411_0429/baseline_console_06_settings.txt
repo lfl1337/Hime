@@ -1,0 +1,13 @@
+view: 06_settings
+url: http://127.0.0.1:23421/settings
+captured_at: 04:44:05
+message_count: 0
+error_count: 0
+warning_count: 0
+notes: |
+  Zero errors/warnings. Settings page renders completely: Theme, Training Defaults,
+  Paths (EPUB Watch Folder, Models Base Path, LoRA Path, Training Log Path,
+  Scripts Path), and Pipeline Models section. All expected paths are present.
+
+--- messages ---
+(none)

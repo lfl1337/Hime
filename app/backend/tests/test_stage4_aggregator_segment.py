@@ -126,3 +126,14 @@ async def test_aggregate_segment_empty_annotations_returns_ok():
     verdict = await agg.aggregate_segment([])
     assert isinstance(verdict, SegmentVerdict)
     assert verdict.verdict == "ok"
+
+
+@pytest.mark.asyncio
+async def test_dry_run_aggregate_segment_returns_ok():
+    from app.pipeline.dry_run import DryRunStage4Aggregator
+    from app.pipeline.stage4_aggregator import SegmentVerdict
+    agg = DryRunStage4Aggregator()
+    verdict = await agg.aggregate_segment(_annotations_for_sentences(2, rating=0.9))
+    assert isinstance(verdict, SegmentVerdict)
+    assert verdict.verdict == "ok"
+    assert verdict.instruction == ""

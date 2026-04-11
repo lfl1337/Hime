@@ -177,7 +177,7 @@ def start_training(
             "python", str(script),
             "--model", model_key,
             "--run-name", model_name,
-            "--epochs", str(epochs),
+            "--epochs", str(int(epochs)),
             "--log-file", log,
         ]
         if resume_checkpoint:

@@ -157,3 +157,8 @@ async def test_fix_pass_triggers_single_stage3_rerun(patched_pipeline):
     assert len(verdict_events) == 2
     assert verdict_events[0]["verdict"] == "fix_pass"
     assert verdict_events[1]["verdict"] == "ok"
+    # VRAM dance: reader + aggregator load/unload once per iteration (2 iters)
+    assert ctx["reader"].load.call_count == 2
+    assert ctx["reader"].unload.call_count == 2
+    assert ctx["aggregator"].load.call_count == 2
+    assert ctx["aggregator"].unload.call_count == 2

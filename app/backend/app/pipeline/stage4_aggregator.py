@@ -241,6 +241,7 @@ class Stage4Aggregator:
                     verdict,
                 )
                 verdict = "ok"
+                instruction = ""
             return SegmentVerdict(verdict=verdict, instruction=instruction)
         except Exception:  # noqa: BLE001
             _log.warning("[Stage4Aggregator] segment parse error — defaulting to ok")

@@ -18,7 +18,8 @@ WebSocket event contract:
                               "verdict": "ok"|"fix_pass"|"full_retry",
                               "instruction": str,
                               "fix_pass_count": int, "full_retry_count": int}
-  {"event": "segment_complete", "paragraph_id": id, "translation": text}
+  {"event": "segment_complete", "paragraph_id": id, "translation": text,
+                                "retry_flag": bool}
   {"event": "pipeline_complete", "epub_path": str}
   {"event": "pipeline_error", "detail": str}
   None  <- sentinel
@@ -76,6 +77,7 @@ async def _checkpoint_segment(
     retry_flag: bool | None = None,
     aggregator_verdict: str | None = None,
     aggregator_instruction: str | None = None,
+    reviewer_notes: str | None = None,
 ) -> None:
     """Persist a completed segment translation using its own AsyncSessionLocal session."""
     async with AsyncSessionLocal() as session:
@@ -98,6 +100,8 @@ async def _checkpoint_segment(
             paragraph.aggregator_verdict = aggregator_verdict
         if aggregator_instruction is not None:
             paragraph.aggregator_instruction = aggregator_instruction
+        if reviewer_notes is not None:
+            paragraph.reviewer_notes = reviewer_notes
 
         chapter = await session.get(Chapter, paragraph.chapter_id)
         if chapter:
@@ -406,6 +410,16 @@ async def run_pipeline_v2(
                 )
                 break
 
+            reviewer_notes_text: str | None = None
+            if retry_flag_exhausted:
+                reviewer_notes_text = (
+                    f"[Stage 4 retry budget exhausted] "
+                    f"last_verdict={last_verdict} "
+                    f"fix_pass_count={fix_pass_count}/{MAX_FIX_PASS_RETRIES} "
+                    f"full_retry_count={full_retry_count}/{MAX_FULL_PIPELINE_RETRIES} "
+                    f"last_instruction={last_instruction!r}"
+                )
+
             final_text = current_polished
             await _checkpoint_segment(
                 paragraph_id,
@@ -416,12 +430,14 @@ async def run_pipeline_v2(
                 retry_flag=retry_flag_exhausted,
                 aggregator_verdict=last_verdict,
                 aggregator_instruction=last_instruction,
+                reviewer_notes=reviewer_notes_text,
             )
 
             await ws_queue.put({
                 "event": "segment_complete",
                 "paragraph_id": paragraph_id,
                 "translation": final_text,
+                "retry_flag": retry_flag_exhausted,
             })
 
         epub_path = await export_book(book_id, session)

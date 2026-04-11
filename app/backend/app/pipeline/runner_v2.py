@@ -51,6 +51,12 @@ async def _checkpoint_segment(
     paragraph_id: int,
     final_text: str,
     confidence_log: dict | None,
+    *,
+    retry_count_fix_pass: int | None = None,
+    retry_count_full_pipeline: int | None = None,
+    retry_flag: bool | None = None,
+    aggregator_verdict: str | None = None,
+    aggregator_instruction: str | None = None,
 ) -> None:
     """Persist a completed segment translation using its own AsyncSessionLocal session."""
     async with AsyncSessionLocal() as session:
@@ -62,6 +68,17 @@ async def _checkpoint_segment(
         paragraph.translated_text = final_text
         paragraph.is_translated = True
         paragraph.translated_at = datetime.now(UTC)
+
+        if retry_count_fix_pass is not None:
+            paragraph.retry_count_fix_pass = retry_count_fix_pass
+        if retry_count_full_pipeline is not None:
+            paragraph.retry_count_full_pipeline = retry_count_full_pipeline
+        if retry_flag is not None:
+            paragraph.retry_flag = retry_flag
+        if aggregator_verdict is not None:
+            paragraph.aggregator_verdict = aggregator_verdict
+        if aggregator_instruction is not None:
+            paragraph.aggregator_instruction = aggregator_instruction
 
         chapter = await session.get(Chapter, paragraph.chapter_id)
         if chapter:
@@ -132,6 +149,18 @@ async def run_pipeline_v2(
         total = len(segments)
         await ws_queue.put({"event": "preprocess_complete", "segment_count": total})
 
+        # Dry-run stubs (W8): when HIME_DRY_RUN=1, bypass all model loads.
+        dry_run = bool(settings.hime_dry_run)
+        if dry_run:
+            from .dry_run import (  # noqa: PLC0415
+                DryRunStage4Aggregator,
+                DryRunStage4Reader,
+                dry_run_stage2_merge,
+                dry_run_stage3_polish,
+                make_dry_run_stage1_drafts,
+            )
+            _log.info("[runner_v2] DRY-RUN mode active — no models will be loaded")
+
         _SENT_SPLIT = re.compile(r'(?<=[.!?…」])\s+')
 
         for i, segment in enumerate(segments):
@@ -144,11 +173,18 @@ async def run_pipeline_v2(
             })
 
             # Stage 1: pass fields from PreprocessedSegment
-            drafts = await _stage1.run_stage1(
-                segment=segment.source_jp,
-                rag_context=segment.rag_context,
-                glossary_context=segment.glossary_context,
-            )
+            if dry_run:
+                drafts = await make_dry_run_stage1_drafts(
+                    segment=segment.source_jp,
+                    rag_context=segment.rag_context,
+                    glossary_context=segment.glossary_context,
+                )
+            else:
+                drafts = await _stage1.run_stage1(
+                    segment=segment.source_jp,
+                    rag_context=segment.rag_context,
+                    glossary_context=segment.glossary_context,
+                )
             await ws_queue.put({"event": "stage1_complete", "paragraph_id": paragraph_id})
 
             # Stage 2: convert Stage1Drafts to dict with keys matching merger_messages()
@@ -159,11 +195,17 @@ async def run_pipeline_v2(
                 "gemma4_e4b": drafts.gemma4_e4b or "",
                 "jmdict": drafts.jmdict,
             }
-            merged_str = await _stage2.merge(drafts_dict, segment.rag_context, segment.glossary_context)
+            if dry_run:
+                merged_str = await dry_run_stage2_merge(drafts_dict, segment.rag_context, segment.glossary_context)
+            else:
+                merged_str = await _stage2.merge(drafts_dict, segment.rag_context, segment.glossary_context)
             await ws_queue.put({"event": "stage2_complete", "paragraph_id": paragraph_id})
 
             # Stage 3: polish(merged, glossary_context, retry_instruction="")
-            polished_str = await _stage3.polish(merged_str, segment.glossary_context)
+            if dry_run:
+                polished_str = await dry_run_stage3_polish(merged_str, segment.glossary_context)
+            else:
+                polished_str = await _stage3.polish(merged_str, segment.glossary_context)
             await ws_queue.put({"event": "stage3_complete", "paragraph_id": paragraph_id})
 
             retry_count = 0
@@ -171,9 +213,14 @@ async def run_pipeline_v2(
             confidence_log: dict | None = None
 
             # Stage 4: Reader + Aggregator with retry loop
-            reader = Stage4Reader()
+            if dry_run:
+                reader = DryRunStage4Reader()
+                aggregator = DryRunStage4Aggregator()
+            else:
+                reader = Stage4Reader()
+                aggregator = Stage4Aggregator()
             reader.load(settings)
-            aggregator = Stage4Aggregator()
+            aggregator.load(settings)
 
             sentences = _SENT_SPLIT.split(current_polished.strip()) or [current_polished]
             source_sentences = _SENT_SPLIT.split(segment.source_jp.strip()) or [segment.source_jp]
@@ -228,9 +275,14 @@ async def run_pipeline_v2(
                 if paragraph_verdict == "retry" and retry_count < MAX_STAGE4_RETRIES:
                     retry_count += 1
                     reader.unload()
-                    current_polished = await _stage3.polish(
-                        merged_str, segment.glossary_context, retry_instruction=retry_instruction
-                    )
+                    if dry_run:
+                        current_polished = await dry_run_stage3_polish(
+                            merged_str, segment.glossary_context, retry_instruction=retry_instruction
+                        )
+                    else:
+                        current_polished = await _stage3.polish(
+                            merged_str, segment.glossary_context, retry_instruction=retry_instruction
+                        )
                     sentences = _SENT_SPLIT.split(current_polished.strip()) or [current_polished]
                     if len(source_sentences) < len(sentences):
                         source_sentences += [source_sentences[-1]] * (len(sentences) - len(source_sentences))

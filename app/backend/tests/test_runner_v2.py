@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.database import Base
 from app.models import Book, Chapter, Paragraph
+from app.pipeline.stage4_aggregator import SegmentVerdict
 
 
 @pytest_asyncio.fixture
@@ -94,7 +95,6 @@ async def _drain_queue(q: asyncio.Queue) -> list[dict]:
 async def test_preprocess_complete_event(seeded_book, async_session):
     paragraph_id = seeded_book["paragraph_id"]
     fake_segment = _make_segment(paragraph_id)
-    fake_verdict = _make_verdict("okay")
 
     with (
         patch("app.pipeline.runner_v2._preprocessor") as mock_pre,
@@ -116,7 +116,9 @@ async def test_preprocess_complete_event(seeded_book, async_session):
         mock_reader_instance.unload = MagicMock()
         MockReader.return_value = mock_reader_instance
         mock_agg_instance = MagicMock()
-        mock_agg_instance.aggregate = AsyncMock(return_value=fake_verdict)
+        mock_agg_instance.aggregate_segment = AsyncMock(
+            return_value=SegmentVerdict(verdict="ok", instruction="")
+        )
         mock_agg_instance.load = MagicMock()
         mock_agg_instance.unload = MagicMock()
         MockAgg.return_value = mock_agg_instance
@@ -138,11 +140,10 @@ async def test_retry_loop_repolished_twice(seeded_book, async_session):
     paragraph_id = seeded_book["paragraph_id"]
     fake_segment = _make_segment(paragraph_id)
     verdicts = [
-        _make_verdict("retry", "Fix tone."),
-        _make_verdict("retry", "Fix register."),
-        _make_verdict("okay"),
+        SegmentVerdict(verdict="fix_pass", instruction="Fix tone."),
+        SegmentVerdict(verdict="fix_pass", instruction="Fix register."),
+        SegmentVerdict(verdict="ok", instruction=""),
     ]
-    verdict_iter = iter(verdicts)
 
     with (
         patch("app.pipeline.runner_v2._preprocessor") as mock_pre,
@@ -164,7 +165,7 @@ async def test_retry_loop_repolished_twice(seeded_book, async_session):
         mock_reader_instance.unload = MagicMock()
         MockReader.return_value = mock_reader_instance
         mock_agg_instance = MagicMock()
-        mock_agg_instance.aggregate = AsyncMock(side_effect=lambda _anns: next(verdict_iter))
+        mock_agg_instance.aggregate_segment = AsyncMock(side_effect=verdicts)
         mock_agg_instance.load = MagicMock()
         mock_agg_instance.unload = MagicMock()
         MockAgg.return_value = mock_agg_instance
@@ -175,6 +176,7 @@ async def test_retry_loop_repolished_twice(seeded_book, async_session):
         await run_pipeline_v2(seeded_book["book_id"], q, async_session)
         await _drain_queue(q)
 
+    # 1 initial + 2 fix_pass retries = 3 total
     assert mock_s3.polish.call_count == 3
 
 
@@ -182,7 +184,7 @@ async def test_retry_loop_repolished_twice(seeded_book, async_session):
 async def test_retry_cap_accepts_after_3(seeded_book, async_session):
     paragraph_id = seeded_book["paragraph_id"]
     fake_segment = _make_segment(paragraph_id)
-    always_retry = _make_verdict("retry", "Still not great.")
+    always_fix_pass = SegmentVerdict(verdict="fix_pass", instruction="Still not great.")
 
     polish_call_count = 0
 
@@ -211,7 +213,7 @@ async def test_retry_cap_accepts_after_3(seeded_book, async_session):
         mock_reader_instance.unload = MagicMock()
         MockReader.return_value = mock_reader_instance
         mock_agg_instance = MagicMock()
-        mock_agg_instance.aggregate = AsyncMock(return_value=always_retry)
+        mock_agg_instance.aggregate_segment = AsyncMock(return_value=always_fix_pass)
         mock_agg_instance.load = MagicMock()
         mock_agg_instance.unload = MagicMock()
         MockAgg.return_value = mock_agg_instance
@@ -222,26 +224,27 @@ async def test_retry_cap_accepts_after_3(seeded_book, async_session):
         await run_pipeline_v2(seeded_book["book_id"], q, async_session)
         events = await _drain_queue(q)
 
-    # 1 initial + 3 retries = 4 total
-    assert polish_call_count == 4
+    # 1 initial + MAX_FIX_PASS_RETRIES(=2) retries = 3 total
+    assert polish_call_count == 3
     event_types = [e["event"] for e in events]
     assert "pipeline_complete" in event_types
     assert "pipeline_error" not in event_types
     verdict_events = [e for e in events if e["event"] == "stage4_verdict"]
-    assert len(verdict_events) == 4
-    assert all(e["verdict"] == "retry" for e in verdict_events)
+    assert len(verdict_events) == 3
+    assert all(e["verdict"] == "fix_pass" for e in verdict_events)
 
 
 @pytest.mark.asyncio
 async def test_db_checkpoint_written(seeded_book, async_session):
     paragraph_id = seeded_book["paragraph_id"]
     fake_segment = _make_segment(paragraph_id)
-    fake_verdict = _make_verdict("okay", confidence={"score": 0.95})
 
     checkpoint_calls = []
 
-    async def fake_checkpoint(pid, text, confidence):
-        checkpoint_calls.append({"paragraph_id": pid, "text": text, "confidence": confidence})
+    async def fake_checkpoint(pid, text, confidence, **kwargs):
+        checkpoint_calls.append({
+            "paragraph_id": pid, "text": text, "confidence": confidence, **kwargs,
+        })
 
     with (
         patch("app.pipeline.runner_v2._preprocessor") as mock_pre,
@@ -263,7 +266,9 @@ async def test_db_checkpoint_written(seeded_book, async_session):
         mock_reader_instance.unload = MagicMock()
         MockReader.return_value = mock_reader_instance
         mock_agg_instance = MagicMock()
-        mock_agg_instance.aggregate = AsyncMock(return_value=fake_verdict)
+        mock_agg_instance.aggregate_segment = AsyncMock(
+            return_value=SegmentVerdict(verdict="ok", instruction="")
+        )
         mock_agg_instance.load = MagicMock()
         mock_agg_instance.unload = MagicMock()
         MockAgg.return_value = mock_agg_instance
@@ -278,9 +283,13 @@ async def test_db_checkpoint_written(seeded_book, async_session):
     call = checkpoint_calls[0]
     assert call["paragraph_id"] == paragraph_id
     assert call["text"] == "polished text"
-    # confidence_log is now a dict built from verdicts list
+    # confidence_log is now a dict with per-cycle verdict history
     assert isinstance(call["confidence"], dict)
-    assert "verdicts" in call["confidence"]
+    assert "cycles" in call["confidence"]
+    assert call["aggregator_verdict"] == "ok"
+    assert call["retry_count_fix_pass"] == 0
+    assert call["retry_count_full_pipeline"] == 0
+    assert call["retry_flag"] is False
 
 
 @pytest.mark.asyncio

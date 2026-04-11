@@ -10,10 +10,14 @@ The old runner.py stays for backward compat (single-paragraph /translate jobs).
 WebSocket event contract:
   {"event": "preprocess_complete", "segment_count": N}
   {"event": "segment_start", "paragraph_id": id, "index": i, "total": N}
-  {"event": "stage1_complete", "paragraph_id": id}
-  {"event": "stage2_complete", "paragraph_id": id}
-  {"event": "stage3_complete", "paragraph_id": id}
-  {"event": "stage4_verdict", "paragraph_id": id, "verdict": "okay"|"retry", "retry_count": n}
+  {"event": "stage1_complete", "paragraph_id": id, "retry_kind"?: "full_retry"}
+  {"event": "stage2_complete", "paragraph_id": id, "retry_kind"?: "full_retry"}
+  {"event": "stage3_complete", "paragraph_id": id, "retry_kind"?: "fix_pass"|"full_retry",
+                               "fix_pass_count"?: int, "full_retry_count"?: int}
+  {"event": "stage4_verdict", "paragraph_id": id,
+                              "verdict": "ok"|"fix_pass"|"full_retry",
+                              "instruction": str,
+                              "fix_pass_count": int, "full_retry_count": int}
   {"event": "segment_complete", "paragraph_id": id, "translation": text}
   {"event": "pipeline_complete", "epub_path": str}
   {"event": "pipeline_error", "detail": str}
@@ -26,7 +30,6 @@ import json
 import logging
 import re
 from datetime import UTC, datetime
-from itertools import groupby
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +47,23 @@ from .stage4_reader import Stage4Reader
 
 _log = logging.getLogger(__name__)
 
-MAX_STAGE4_RETRIES = 3
+# Stage 4 retry budgets (per segment, independent)
+MAX_FIX_PASS_RETRIES = 2
+MAX_FULL_PIPELINE_RETRIES = 1
+
+
+def _augment_rag_with_retry(rag_context: str, instruction: str) -> str:
+    """Append a retry instruction to rag_context as a clearly-labelled section.
+
+    This is how the condensed segment instruction reaches Stage 1 on a full
+    pipeline retry — without touching any adapter code.
+    """
+    if not instruction.strip():
+        return rag_context
+    note = f"[Retry instruction from prior review]: {instruction.strip()}"
+    if rag_context.strip():
+        return f"{rag_context}\n\n{note}"
+    return note
 
 
 async def _checkpoint_segment(
@@ -208,93 +227,121 @@ async def run_pipeline_v2(
                 polished_str = await _stage3.polish(merged_str, segment.glossary_context)
             await ws_queue.put({"event": "stage3_complete", "paragraph_id": paragraph_id})
 
-            retry_count = 0
+            # Stage 4 — two-path retry dispatch
+            fix_pass_count = 0
+            full_retry_count = 0
+            retry_flag_exhausted = False
             current_polished = polished_str
-            confidence_log: dict | None = None
-
-            # Stage 4: Reader + Aggregator with retry loop
-            if dry_run:
-                reader = DryRunStage4Reader()
-                aggregator = DryRunStage4Aggregator()
-            else:
-                reader = Stage4Reader()
-                aggregator = Stage4Aggregator()
-            reader.load(settings)
-            aggregator.load(settings)
-
-            sentences = _SENT_SPLIT.split(current_polished.strip()) or [current_polished]
-            source_sentences = _SENT_SPLIT.split(segment.source_jp.strip()) or [segment.source_jp]
-            if len(source_sentences) < len(sentences):
-                source_sentences += [source_sentences[-1]] * (len(sentences) - len(source_sentences))
-            source_sentences = source_sentences[: len(sentences)]
+            current_merged = merged_str
+            last_verdict: str = "ok"
+            last_instruction: str = ""
+            confidence_log: dict = {"cycles": []}
 
             while True:
+                # Load + review + unload (reader)
+                if dry_run:
+                    reader = DryRunStage4Reader()
+                    aggregator = DryRunStage4Aggregator()
+                else:
+                    reader = Stage4Reader()
+                    aggregator = Stage4Aggregator()
+
+                sentences = _SENT_SPLIT.split(current_polished.strip()) or [current_polished]
+                source_sentences = _SENT_SPLIT.split(segment.source_jp.strip()) or [segment.source_jp]
+                if len(source_sentences) < len(sentences):
+                    source_sentences += [source_sentences[-1]] * (len(sentences) - len(source_sentences))
+                source_sentences = source_sentences[: len(sentences)]
+
+                reader.load(settings)
                 annotations = await reader.review(
-                    sentences=sentences, source_sentences=source_sentences
+                    sentences=sentences, source_sentences=source_sentences,
                 )
+                reader.unload()
 
-                # Aggregate per sentence group
-                sorted_ann = sorted(annotations, key=lambda a: a.sentence_id)
-                verdicts = []
-                for sid, group in groupby(sorted_ann, key=lambda a: a.sentence_id):
-                    verdict = await aggregator.aggregate(list(group))
-                    verdicts.append(verdict)
+                aggregator.load(settings)
+                segment_verdict = await aggregator.aggregate_segment(annotations)
+                aggregator.unload()
 
-                retry_verdicts = [v for v in verdicts if v.verdict == "retry"]
-                # Build a combined verdict for the paragraph
-                paragraph_verdict = "retry" if retry_verdicts else "okay"
-                retry_instruction = (
-                    " | ".join(
-                        f"[s{getattr(v, 'sentence_id', '?')}] {v.retry_instruction}"
-                        for v in retry_verdicts
-                        if v.retry_instruction
-                    )
-                    if retry_verdicts
-                    else ""
-                )
-
-                # Build confidence_log from verdicts
-                confidence_log = {
-                    "verdicts": [
-                        {
-                            "sentence_id": getattr(v, "sentence_id", None),
-                            "verdict": v.verdict,
-                            "confidence": getattr(v, "confidence", None),
-                        }
-                        for v in verdicts
-                    ]
-                }
+                last_verdict = segment_verdict.verdict
+                last_instruction = segment_verdict.instruction
+                confidence_log["cycles"].append({
+                    "verdict": segment_verdict.verdict,
+                    "instruction": segment_verdict.instruction,
+                    "fix_pass_count": fix_pass_count,
+                    "full_retry_count": full_retry_count,
+                })
 
                 await ws_queue.put({
                     "event": "stage4_verdict",
                     "paragraph_id": paragraph_id,
-                    "verdict": paragraph_verdict,
-                    "retry_count": retry_count,
+                    "verdict": segment_verdict.verdict,
+                    "instruction": segment_verdict.instruction,
+                    "fix_pass_count": fix_pass_count,
+                    "full_retry_count": full_retry_count,
                 })
 
-                if paragraph_verdict == "retry" and retry_count < MAX_STAGE4_RETRIES:
-                    retry_count += 1
-                    reader.unload()
+                if segment_verdict.verdict == "ok":
+                    break
+
+                if segment_verdict.verdict == "fix_pass":
+                    if fix_pass_count >= MAX_FIX_PASS_RETRIES:
+                        retry_flag_exhausted = True
+                        _log.warning(
+                            "[runner_v2] paragraph %d exhausted fix_pass budget (%d); "
+                            "emitting anyway and setting retry_flag",
+                            paragraph_id, MAX_FIX_PASS_RETRIES,
+                        )
+                        break
+                    fix_pass_count += 1
+                    # Stage 3 re-run with condensed instruction. Stage 3 manages its
+                    # own VRAM (load/unload inside polish()); no external calls needed.
                     if dry_run:
                         current_polished = await dry_run_stage3_polish(
-                            merged_str, segment.glossary_context, retry_instruction=retry_instruction
+                            current_merged,
+                            segment.glossary_context,
+                            retry_instruction=segment_verdict.instruction,
                         )
                     else:
                         current_polished = await _stage3.polish(
-                            merged_str, segment.glossary_context, retry_instruction=retry_instruction
+                            current_merged,
+                            segment.glossary_context,
+                            retry_instruction=segment_verdict.instruction,
                         )
-                    sentences = _SENT_SPLIT.split(current_polished.strip()) or [current_polished]
-                    if len(source_sentences) < len(sentences):
-                        source_sentences += [source_sentences[-1]] * (len(sentences) - len(source_sentences))
-                    source_sentences = source_sentences[: len(sentences)]
-                    reader.load(settings)
-                else:
-                    reader.unload()
+                    await ws_queue.put({
+                        "event": "stage3_complete",
+                        "paragraph_id": paragraph_id,
+                        "retry_kind": "fix_pass",
+                        "fix_pass_count": fix_pass_count,
+                    })
+                    continue
+
+                if segment_verdict.verdict == "full_retry":
+                    # Phase 4 stub: detected but not yet implemented. Phase 5 fills this in.
+                    _log.warning(
+                        "[runner_v2] paragraph %d received full_retry verdict; "
+                        "full-retry branch not yet wired — emitting current output",
+                        paragraph_id,
+                    )
                     break
 
-            aggregator.unload()
+                # Defensive: unknown verdict → emit as-is
+                _log.warning(
+                    "[runner_v2] paragraph %d unknown verdict %r; emitting as-is",
+                    paragraph_id, segment_verdict.verdict,
+                )
+                break
+
             final_text = current_polished
-            await _checkpoint_segment(paragraph_id, final_text, confidence_log)
+            await _checkpoint_segment(
+                paragraph_id,
+                final_text,
+                confidence_log,
+                retry_count_fix_pass=fix_pass_count,
+                retry_count_full_pipeline=full_retry_count,
+                retry_flag=retry_flag_exhausted,
+                aggregator_verdict=last_verdict,
+                aggregator_instruction=last_instruction,
+            )
 
             await ws_queue.put({
                 "event": "segment_complete",

@@ -162,3 +162,70 @@ async def test_fix_pass_triggers_single_stage3_rerun(patched_pipeline):
     assert ctx["reader"].unload.call_count == 2
     assert ctx["aggregator"].load.call_count == 2
     assert ctx["aggregator"].unload.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_full_retry_triggers_stage1_to_stage3_rerun(patched_pipeline, fake_segment):
+    from app.pipeline.runner_v2 import run_pipeline_v2
+    verdicts = [
+        SegmentVerdict(verdict="full_retry", instruction="Re-translate: speaker wrong in sentence 1."),
+        SegmentVerdict(verdict="ok", instruction=""),
+    ]
+    with patched_pipeline(verdict_sequence=verdicts) as ctx:
+        q: asyncio.Queue = asyncio.Queue()
+        await run_pipeline_v2(book_id=1, ws_queue=q, session=MagicMock())
+        events = await _drain(q)
+
+    # Stage 1 and Stage 2 each run TWICE: once originally, once for full-retry
+    assert ctx["stage1"].await_count == 2
+    assert ctx["stage2"].await_count == 2
+    assert ctx["stage3"].await_count == 2
+
+    # Second Stage 1 call receives the augmented rag_context with the instruction
+    second_stage1 = ctx["stage1"].call_args_list[1]
+    if "rag_context" in second_stage1.kwargs:
+        rag_ctx = second_stage1.kwargs["rag_context"]
+    else:
+        rag_ctx = second_stage1.args[1] if len(second_stage1.args) > 1 else ""
+    assert "Retry instruction from prior review" in rag_ctx
+    assert "speaker wrong" in rag_ctx
+    # Original rag_context is preserved
+    assert "prior passage" in rag_ctx
+
+    cp = ctx["checkpoints"][0]
+    assert cp["retry_count_fix_pass"] == 0
+    assert cp["retry_count_full_pipeline"] == 1
+    assert cp["retry_flag"] is False
+    assert cp["aggregator_verdict"] == "ok"
+
+    # WS events include the re-emitted stage events for the second pass
+    stage1_completes = [e for e in events if e.get("event") == "stage1_complete"]
+    stage2_completes = [e for e in events if e.get("event") == "stage2_complete"]
+    stage3_completes = [e for e in events if e.get("event") == "stage3_complete"]
+    assert len(stage1_completes) == 2
+    assert len(stage2_completes) == 2
+    assert len(stage3_completes) == 2
+    # The second set of stage events is tagged retry_kind="full_retry"
+    assert any(e.get("retry_kind") == "full_retry" for e in stage1_completes)
+    assert any(e.get("retry_kind") == "full_retry" for e in stage2_completes)
+    assert any(e.get("retry_kind") == "full_retry" for e in stage3_completes)
+
+
+@pytest.mark.asyncio
+async def test_full_retry_then_fix_pass_uses_both_budgets(patched_pipeline):
+    """A full_retry that gets re-judged as fix_pass consumes one of each budget."""
+    from app.pipeline.runner_v2 import run_pipeline_v2
+    verdicts = [
+        SegmentVerdict(verdict="full_retry", instruction="Re-translate: missing clause."),
+        SegmentVerdict(verdict="fix_pass", instruction="Clean up punctuation."),
+        SegmentVerdict(verdict="ok", instruction=""),
+    ]
+    with patched_pipeline(verdict_sequence=verdicts) as ctx:
+        q: asyncio.Queue = asyncio.Queue()
+        await run_pipeline_v2(book_id=1, ws_queue=q, session=MagicMock())
+        await _drain(q)
+
+    cp = ctx["checkpoints"][0]
+    assert cp["retry_count_fix_pass"] == 1
+    assert cp["retry_count_full_pipeline"] == 1
+    assert cp["retry_flag"] is False

@@ -93,11 +93,25 @@ async def test_aggregate_segment_full_retry_verdict():
 
 
 @pytest.mark.asyncio
-async def test_aggregate_segment_parse_error_falls_back_to_ok():
+async def test_aggregate_segment_parse_error_falls_back_to_ok(caplog):
+    import logging
     agg = _aggregator_with_output("NOT JSON AT ALL")
-    verdict = await agg.aggregate_segment(_annotations_for_sentences(1, rating=0.5))
+    with caplog.at_level(logging.WARNING, logger="app.pipeline.stage4_aggregator"):
+        verdict = await agg.aggregate_segment(_annotations_for_sentences(1, rating=0.5))
     assert verdict.verdict == "ok"
     assert verdict.instruction == ""
+    assert "parse error" in caplog.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_aggregate_segment_empty_instruction_demotes_to_ok(caplog):
+    import logging
+    out = json.dumps({"verdict": "fix_pass", "instruction": ""})
+    agg = _aggregator_with_output(out)
+    with caplog.at_level(logging.WARNING, logger="app.pipeline.stage4_aggregator"):
+        verdict = await agg.aggregate_segment(_annotations_for_sentences(1, rating=0.5))
+    assert verdict.verdict == "ok"
+    assert "demoting to ok" in caplog.text
 
 
 @pytest.mark.asyncio

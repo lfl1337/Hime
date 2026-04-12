@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { ModelOutput } from '../../types/comparison'
 
 interface ModelPanelProps {
-  modelKey: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2'
+  modelKey: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp'
   displayName: string
   accentColor: 'blue' | 'emerald' | 'amber' | 'purple'
   online: boolean

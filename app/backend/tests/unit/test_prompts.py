@@ -94,15 +94,15 @@ def test_qwen32b_template_has_no_hallucination_rule():
            "do not add" in _QWEN32B_STAGE1.lower()
 
 
-def test_sarashina2_template_has_pronoun_rule():
-    from app.pipeline.prompts import _SARASHINA2_STAGE1
-    assert "female pronouns" in _SARASHINA2_STAGE1.lower()
+def test_llm_jp_template_has_pronoun_rule():
+    from app.pipeline.prompts import _LLMJP_STAGE1
+    assert "female pronouns" in _LLMJP_STAGE1.lower()
 
 
-def test_sarashina2_template_enforces_english_output():
-    from app.pipeline.prompts import _SARASHINA2_STAGE1
-    assert "english only" in _SARASHINA2_STAGE1.lower() or \
-           "must be english" in _SARASHINA2_STAGE1.lower()
+def test_llm_jp_template_enforces_english_output():
+    from app.pipeline.prompts import _LLMJP_STAGE1
+    assert "english only" in _LLMJP_STAGE1.lower() or \
+           "respond only in english" in _LLMJP_STAGE1.lower()
 
 
 def test_translategemma_template_is_shorter_than_qwen():
@@ -122,9 +122,10 @@ def test_merger_template_has_jmdict_authoritative():
     assert "JMDICT IS AUTHORITATIVE" in _MERGER_SYSTEM
 
 
-def test_merger_draft_labels_include_sarashina2():
+def test_merger_draft_labels_include_llm_jp():
     from app.pipeline.prompts import _DRAFT_LABELS
-    assert "sarashina2" in _DRAFT_LABELS
+    assert "llm_jp" in _DRAFT_LABELS
+    assert "sarashina2" not in _DRAFT_LABELS
     assert "gemma4_e4b" not in _DRAFT_LABELS
 
 

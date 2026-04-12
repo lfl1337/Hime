@@ -1,6 +1,6 @@
 // Inference model health
 export interface ModelEndpoint {
-  key: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2'
+  key: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp'
   name: string
   endpoint: string
   online: boolean
@@ -37,9 +37,9 @@ export interface ComparisonState {
   inputText: string
   isComparing: boolean
   currentJobId: number | null
-  modelOutputs: Record<'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2', ModelOutput>
+  modelOutputs: Record<'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp', ModelOutput>
   consensusText: string
   consensusDone: boolean
   modelEndpoints: ModelEndpoint[]
-  liveStatuses: Record<'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2', ModelLiveStatus>
+  liveStatuses: Record<'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp', ModelLiveStatus>
 }

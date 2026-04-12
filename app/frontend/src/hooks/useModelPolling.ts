@@ -7,7 +7,7 @@ const INITIAL: Record<string, ModelLiveStatus> = {
   qwen32b:        { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
   translategemma: { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
   qwen35_9b:      { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
-  sarashina2:     { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
+  llm_jp:         { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
 }
 
 function runNameToKey(runName: string): string | null {
@@ -15,7 +15,7 @@ function runNameToKey(runName: string): string | null {
   if (n.includes('qwen2.5-32b') || n.includes('qwen2.5_32b')) return 'qwen32b'
   if (n.includes('translategemma') || n.includes('translate-gemma') || n.includes('translate_gemma')) return 'translategemma'
   if (n.includes('qwen3.5-9b') || n.includes('qwen3.5_9b') || n.includes('qwen35_9b')) return 'qwen35_9b'
-  if (n.includes('sarashina2') || n.includes('sarashina-2')) return 'sarashina2'
+  if (n.includes('llm-jp') || n.includes('llm_jp') || n.includes('llmjp')) return 'llm_jp'
   return null
 }
 
@@ -55,7 +55,7 @@ export function useModelPolling(active: boolean): {
           qwen32b:        { ...INITIAL.qwen32b },
           translategemma: { ...INITIAL.translategemma },
           qwen35_9b:      { ...INITIAL.qwen35_9b },
-          sarashina2:     { ...INITIAL.sarashina2 },
+          llm_jp:         { ...INITIAL.llm_jp },
         }
 
         // Populate inference status — accept any key the backend returns

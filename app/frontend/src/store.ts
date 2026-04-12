@@ -44,13 +44,13 @@ interface AppStore {
   setComparisonInput: (text: string) => void
   setIsComparing: (v: boolean) => void
   setCurrentJobId: (id: number | null) => void
-  appendModelToken: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2', token: string) => void
-  setModelComplete: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2', output: string) => void
-  setModelError: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2', error: string) => void
+  appendModelToken: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp', token: string) => void
+  setModelComplete: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp', output: string) => void
+  setModelError: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp', error: string) => void
   setConsensus: (text: string, done: boolean) => void
   resetComparison: () => void
   setModelEndpoints: (endpoints: ModelEndpoint[]) => void
-  setLiveStatus: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2', status: ModelLiveStatus) => void
+  setLiveStatus: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp', status: ModelLiveStatus) => void
 }
 
 const INITIAL_MODEL_OUTPUT: ModelOutput = { text: '', done: false, error: null, timedOut: false }
@@ -67,7 +67,7 @@ const INITIAL_COMPARISON_STATE: ComparisonState = {
     qwen32b:        { ...INITIAL_MODEL_OUTPUT },
     translategemma: { ...INITIAL_MODEL_OUTPUT },
     qwen35_9b:      { ...INITIAL_MODEL_OUTPUT },
-    sarashina2:     { ...INITIAL_MODEL_OUTPUT },
+    llm_jp:     { ...INITIAL_MODEL_OUTPUT },
   },
   consensusText: '',
   consensusDone: false,
@@ -76,7 +76,7 @@ const INITIAL_COMPARISON_STATE: ComparisonState = {
     qwen32b:        { ...INITIAL_LIVE_STATUS },
     translategemma: { ...INITIAL_LIVE_STATUS },
     qwen35_9b:      { ...INITIAL_LIVE_STATUS },
-    sarashina2:     { ...INITIAL_LIVE_STATUS },
+    llm_jp:     { ...INITIAL_LIVE_STATUS },
   },
 }
 

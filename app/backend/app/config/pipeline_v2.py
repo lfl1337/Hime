@@ -52,9 +52,9 @@ class _PipelineV2Settings(BaseSettings):
     hime_stage1c_model_id: str = Field(default="Qwen/Qwen3-9B")
     hime_stage1c_local_path: str = Field(default=str(MODELS_DIR / "qwen3-9b"))
 
-    # Stage 1D: Gemma4 E4B default — replaced by Sarashina2 in Phase 6
-    hime_stage1d_model_id: str = Field(default="google/gemma-4-e4b")
-    hime_stage1d_local_path: str = Field(default=str(MODELS_DIR / "gemma4-e4b"))
+    # Stage 1D: LLM-jp-3-7.2B-Instruct3 (Japanese-native, NF4 4-bit)
+    hime_stage1d_model_id: str = Field(default="llm-jp/llm-jp-3-7.2b-instruct3")
+    hime_stage1d_local_path: str = Field(default=str(MODELS_DIR / "llm-jp-3-7b"))
 
     hime_stage2_model_id: str = Field(default="google/translategemma-27b-it")
     hime_stage2_local_path: str = Field(

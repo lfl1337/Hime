@@ -69,6 +69,7 @@ app/backend/logs/
 *.db
 *.db-shm
 *.db-wal
+*.bak_*
 
 # ─── OS-generated files ──────────────────────────────────────────────────────
 .DS_Store
@@ -92,3 +93,7 @@ htmlcov/
 .ruff_cache/
 data/analysis/*.jsonl 
 .worktrees/
+
+# Shuukura RAG pipeline (auto-added)
+data/raw_imports/shuukura/jp_extracted/
+data/rag/staging/

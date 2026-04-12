@@ -9,7 +9,10 @@ from .stage4_reader import PersonaAnnotation
 
 _log = logging.getLogger(__name__)
 
-_AGGREGATOR_SYSTEM = """\
+_MAX_NEW_TOKENS = 128
+_SEGMENT_MAX_TOKENS = 256
+
+_AGGREGATOR_SYSTEM_PROMPT = """\
 You are the final quality aggregator for a JP->EN light novel translation review system.
 You will receive structured feedback from 15 specialist reader-critic personas about a
 single translated sentence.
@@ -30,6 +33,60 @@ Respond ONLY with a single JSON object (no markdown, no explanation):
   "confidence": <float 0.0-1.0>
 }"""
 
+_SEGMENT_AGGREGATOR_SYSTEM = """\
+You are the final quality aggregator for a JP->EN light novel translation review system.
+You receive structured feedback from 15 specialist reader-critic personas about ONE
+translated segment (a paragraph, possibly containing multiple sentences).
+
+Your task has TWO parts:
+
+1. CONDENSE — synthesise all the reader feedback into ONE coherent, actionable retry
+   instruction. ONE sentence, maximum 60 words, in English. Do NOT list raw annotations
+   or persona names; do NOT output bullet points. Speak directly to the translator:
+   "Rewrite ...", "Fix ...", "Preserve ...". If the segment is acceptable, return an
+   empty string for the instruction.
+
+2. CLASSIFY severity using this exact taxonomy:
+
+   "ok"         -> No issue. Translation is acceptable as-is. Emit instruction="".
+
+   "fix_pass"   -> LIGHT error. Triggers a Stage 3 polish re-run only. Use this verdict
+                   when the reader feedback reports ONLY surface-level problems that do
+                   not change meaning:
+                     - style or register inconsistencies
+                     - sentence flow or rhythm problems
+                     - punctuation or dialogue-formatting mistakes
+                     - honorific inconsistency (missing/extra/wrong honorific suffix)
+                     - minor phrasing awkwardness
+
+   "full_retry" -> HEAVY error. Triggers a full Stage 1 -> Stage 2 -> Stage 3
+                   re-translation. Use this verdict when ANY reader reports:
+                     - wrong meaning or mistranslated clause
+                     - missing sentence, clause, or paragraph (omission)
+                     - added or hallucinated content not present in the Japanese source
+                     - wrong speaker attributed to dialogue
+                     - wrong character name, place name, or other glossary term
+
+   If both light AND heavy errors are present in the feedback, always classify as
+   "full_retry". Heavy errors dominate.
+
+Respond ONLY with a single JSON object (no markdown fences, no explanation, no prose):
+{
+  "verdict": "ok" | "fix_pass" | "full_retry",
+  "instruction": "<one-sentence actionable retry instruction, or empty string if verdict is ok>"
+}"""
+
+
+def _strip_code_fence(raw: str) -> str:
+    """Remove markdown code fences from a JSON string."""
+    stripped = raw.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        # Remove first line (```json or ```) and last line (```)
+        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+        return "\n".join(inner).strip()
+    return stripped
+
 
 def _build_user_prompt(annotations: list[PersonaAnnotation]) -> str:
     if not annotations:
@@ -44,11 +101,45 @@ def _build_user_prompt(annotations: list[PersonaAnnotation]) -> str:
     return "\n".join(lines)
 
 
+def _build_segment_user_prompt(annotations: list[PersonaAnnotation]) -> str:
+    """Render all N_sentences x 15 persona annotations for one segment."""
+    if not annotations:
+        return "No reader annotations provided."
+    from itertools import groupby
+    sorted_ann = sorted(annotations, key=lambda a: a.sentence_id)
+    lines: list[str] = []
+    for sid, group in groupby(sorted_ann, key=lambda a: a.sentence_id):
+        group_list = list(group)
+        lines.append(f"--- Sentence {sid} ---")
+        for a in group_list:
+            issues_str = "; ".join(a.issues) if a.issues else "none"
+            lines.append(
+                f"[{a.persona}] rating={a.rating:.2f} "
+                f"issues=[{issues_str}] suggestion={a.suggestion!r}"
+            )
+        mean = sum(a.rating for a in group_list) / len(group_list)
+        lines.append(f"Sentence {sid} mean rating: {mean:.3f}")
+        lines.append("")
+    overall = sum(a.rating for a in annotations) / len(annotations)
+    lines.append(f"Overall segment mean rating: {overall:.3f}")
+    return "\n".join(lines)
+
+
 class AggregatorVerdict(BaseModel):
     sentence_id: int
     verdict: Literal["okay", "retry"]
     retry_instruction: str | None
     confidence: float
+
+
+class SegmentVerdict(BaseModel):
+    """Segment-level verdict from the Stage 4 aggregator.
+
+    Produced once per segment by aggregate_segment(). Drives the two-path retry
+    system in runner_v2.
+    """
+    verdict: Literal["ok", "fix_pass", "full_retry"]
+    instruction: str
 
 
 class Stage4Aggregator:
@@ -94,11 +185,11 @@ class Stage4Aggregator:
         torch.cuda.empty_cache()
         _log.info("[Stage4Aggregator] VRAM released.")
 
-    def _infer_one(self, user_prompt: str) -> str:
+    def _run_generation(self, system_prompt: str, user_prompt: str, max_new_tokens: int) -> str:
         import contextlib
         import torch  # type: ignore[import]
         messages = [
-            {"role": "system", "content": _AGGREGATOR_SYSTEM},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
         text = self._tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -108,7 +199,7 @@ class Stage4Aggregator:
         with _no_grad():
             output_ids = self._model.generate(
                 **inputs,
-                max_new_tokens=128,
+                max_new_tokens=max_new_tokens,
                 temperature=0.1,
                 do_sample=True,
                 eos_token_id=self._tokenizer.eos_token_id,
@@ -118,11 +209,11 @@ class Stage4Aggregator:
         new_tokens = output_ids[0][input_len:]
         return self._tokenizer.decode(new_tokens, skip_special_tokens=True)
 
+    def _infer_one(self, user_prompt: str) -> str:
+        return self._run_generation(_AGGREGATOR_SYSTEM_PROMPT, user_prompt, _MAX_NEW_TOKENS)
+
     def _parse_verdict(self, raw: str, sentence_id: int) -> AggregatorVerdict:
-        text = raw.strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:]).strip()
+        text = _strip_code_fence(raw)
         try:
             data = json.loads(text)
             return AggregatorVerdict(
@@ -145,3 +236,40 @@ class Stage4Aggregator:
         loop = asyncio.get_running_loop()
         raw = await loop.run_in_executor(None, self._infer_one, user_prompt)
         return self._parse_verdict(raw, sentence_id)
+
+    def _parse_segment_verdict(self, raw: str) -> SegmentVerdict:
+        text = _strip_code_fence(raw)
+        try:
+            data = json.loads(text)
+            verdict = data.get("verdict", "ok")
+            if verdict not in ("ok", "fix_pass", "full_retry"):
+                _log.warning("[Stage4Aggregator] unknown verdict %r, defaulting to ok", verdict)
+                verdict = "ok"
+            instruction = str(data.get("instruction") or "")
+            if verdict in ("fix_pass", "full_retry") and not instruction.strip():
+                _log.warning(
+                    "[Stage4Aggregator] verdict=%s with empty instruction — demoting to ok",
+                    verdict,
+                )
+                verdict = "ok"
+                instruction = ""
+            return SegmentVerdict(verdict=verdict, instruction=instruction)
+        except Exception:  # noqa: BLE001
+            _log.warning("[Stage4Aggregator] segment parse error — defaulting to ok")
+            return SegmentVerdict(verdict="ok", instruction="")
+
+    def _infer_segment(self, user_prompt: str) -> str:
+        return self._run_generation(_SEGMENT_AGGREGATOR_SYSTEM, user_prompt, _SEGMENT_MAX_TOKENS)
+
+    async def aggregate_segment(self, annotations: list[PersonaAnnotation]) -> SegmentVerdict:
+        """Condense all N_sentences x 15 persona annotations into ONE SegmentVerdict.
+
+        Unlike aggregate() which runs per-sentence, this method takes the full
+        segment's feedback and classifies overall severity using the error taxonomy.
+        """
+        if not annotations:
+            return SegmentVerdict(verdict="ok", instruction="")
+        user_prompt = _build_segment_user_prompt(annotations)
+        loop = asyncio.get_running_loop()
+        raw = await loop.run_in_executor(None, self._infer_segment, user_prompt)
+        return self._parse_segment_verdict(raw)

@@ -44,13 +44,13 @@ interface AppStore {
   setComparisonInput: (text: string) => void
   setIsComparing: (v: boolean) => void
   setCurrentJobId: (id: number | null) => void
-  appendModelToken: (model: 'gemma' | 'deepseek' | 'qwen32b', token: string) => void
-  setModelComplete: (model: 'gemma' | 'deepseek' | 'qwen32b', output: string) => void
-  setModelError: (model: 'gemma' | 'deepseek' | 'qwen32b', error: string) => void
+  appendModelToken: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp', token: string) => void
+  setModelComplete: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp', output: string) => void
+  setModelError: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp', error: string) => void
   setConsensus: (text: string, done: boolean) => void
   resetComparison: () => void
   setModelEndpoints: (endpoints: ModelEndpoint[]) => void
-  setLiveStatus: (model: 'gemma' | 'deepseek' | 'qwen32b', status: ModelLiveStatus) => void
+  setLiveStatus: (model: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'llm_jp', status: ModelLiveStatus) => void
 }
 
 const INITIAL_MODEL_OUTPUT: ModelOutput = { text: '', done: false, error: null, timedOut: false }
@@ -64,17 +64,19 @@ const INITIAL_COMPARISON_STATE: ComparisonState = {
   isComparing: false,
   currentJobId: null,
   modelOutputs: {
-    gemma: { ...INITIAL_MODEL_OUTPUT },
-    deepseek: { ...INITIAL_MODEL_OUTPUT },
-    qwen32b: { ...INITIAL_MODEL_OUTPUT }
+    qwen32b:        { ...INITIAL_MODEL_OUTPUT },
+    translategemma: { ...INITIAL_MODEL_OUTPUT },
+    qwen35_9b:      { ...INITIAL_MODEL_OUTPUT },
+    llm_jp:     { ...INITIAL_MODEL_OUTPUT },
   },
   consensusText: '',
   consensusDone: false,
   modelEndpoints: [],
   liveStatuses: {
-    gemma: { ...INITIAL_LIVE_STATUS },
-    deepseek: { ...INITIAL_LIVE_STATUS },
-    qwen32b: { ...INITIAL_LIVE_STATUS }
+    qwen32b:        { ...INITIAL_LIVE_STATUS },
+    translategemma: { ...INITIAL_LIVE_STATUS },
+    qwen35_9b:      { ...INITIAL_LIVE_STATUS },
+    llm_jp:     { ...INITIAL_LIVE_STATUS },
   },
 }
 

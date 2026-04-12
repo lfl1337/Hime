@@ -1,0 +1,55 @@
+{
+  "checkpoint": "N:\\Projekte\\NiN\\Hime\\modelle\\lora\\Qwen2.5-32B-Instruct\\checkpoint\\checkpoint-12400",
+  "complete": true,
+  "avg_tok_per_sec": 4.22,
+  "results": [
+    {
+      "id": "T1",
+      "jp": "「好きだよ、千夏」\n「え……わたしのこと？」",
+      "en": "\"I love you, Chiha.\"\n\"Me...?\"",
+      "tokens": 12,
+      "tok_per_sec": 3.33,
+      "elapsed_s": 3.6
+    },
+    {
+      "id": "T2",
+      "jp": "「先輩、また一緒に部室に来てくれますか？」と奏は少し俯きながら言った。",
+      "en": "\"Senpai, will you come to the clubroom with me again?\" said Sora while looking down a little.",
+      "tokens": 25,
+      "tok_per_sec": 4.49,
+      "elapsed_s": 5.57
+    },
+    {
+      "id": "T3",
+      "jp": "桜の花びらが舞い散る中、二人は黙ったまま並んで歩いた。言葉はなくても、その沈黙は穏やかで、どこか幸せだった。",
+      "en": "They walked side by side in silence as cherry blossoms fell around them. Even without words, the silence was peaceful and somehow happy.",
+      "tokens": 28,
+      "tok_per_sec": 4.35,
+      "elapsed_s": 6.44
+    },
+    {
+      "id": "T4",
+      "jp": "（好きって言えない。でも、このまま何も言わないのは、もっと嫌だ。）",
+      "en": "(I can't say I love you, but not saying anything is even worse.)",
+      "tokens": 17,
+      "tok_per_sec": 4.17,
+      "elapsed_s": 4.08
+    },
+    {
+      "id": "T5",
+      "jp": "「あなたのそばにいたい。ずっと、ずっと」\n涙が零れた。伸ばした手は、震えていた。",
+      "en": "\"I want to be by your side...forever and ever.\" Tears fell as I reached out to him, my hand trembling.",
+      "tokens": 27,
+      "tok_per_sec": 4.15,
+      "elapsed_s": 6.5
+    },
+    {
+      "id": "T6",
+      "jp": "「藍先輩はいつも凛先輩のことを一番に考えてるんだなって、最近すごく感じます」と彩芽は微笑んだ。",
+      "en": "\"I feel that Aoi senpai always thinks of Rin senpai first,\" said Ayame with a smile.",
+      "tokens": 23,
+      "tok_per_sec": 4.51,
+      "elapsed_s": 5.1
+    }
+  ]
+}

@@ -12,6 +12,20 @@ modelle/lmstudio-community/
 # LoRA training checkpoints (can be many GB each)
 modelle/lora/*/checkpoint/
 modelle/lora/*/interrupted/
+# Full HuggingFace model snapshots (weights + configs + tokenizers) — local-first, never committed
+modelle/qwen3-2b/
+modelle/qwen3-9b/
+modelle/qwen3-30b/
+modelle/qwen3-30b.partial_*/
+modelle/lfm2-2b/
+modelle/lfm2-24b/
+modelle/gemma4-e4b/
+modelle/translategemma-12b/
+modelle/translategemma-27b/
+modelle/embeddings/
+
+# ─── RAG per-series stores (rebuilt locally) ─────────────────────────────────
+data/rag/
 
 # ─── Training data (too large for git) ───────────────────────────────────────
 data/training/

@@ -1,8 +1,9 @@
 export const MODEL_CONFIG = {
-  gemma:    { displayName: 'Gemma 3 12B',     accentColor: 'blue'    as const },
-  deepseek: { displayName: 'DeepSeek R1 32B',  accentColor: 'emerald' as const },
-  qwen32b:  { displayName: 'Qwen 2.5 32B',    accentColor: 'amber'   as const },
+  qwen32b:        { displayName: 'Qwen2.5-32B (v2 LoRA)',         accentColor: 'amber'   as const },
+  translategemma: { displayName: 'TranslateGemma-12B',            accentColor: 'blue'    as const },
+  qwen35_9b:      { displayName: 'Qwen3.5-9B',                   accentColor: 'emerald' as const },
+  llm_jp:         { displayName: 'LLM-jp-3-7.2B',                accentColor: 'purple'  as const },
 } as const
 
 export type ModelKey = keyof typeof MODEL_CONFIG
-export const MODEL_KEYS = ['gemma', 'deepseek', 'qwen32b'] as const
+export const MODEL_KEYS = ['qwen32b', 'translategemma', 'qwen35_9b', 'llm_jp'] as const

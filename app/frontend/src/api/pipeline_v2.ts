@@ -23,11 +23,11 @@ export interface PreprocessResponse {
 export type PipelineV2Event =
   | { event: 'preprocess_complete'; segment_count: number }
   | { event: 'segment_start'; paragraph_id: number; index: number; total: number }
-  | { event: 'stage1_complete'; paragraph_id: number }
-  | { event: 'stage2_complete'; paragraph_id: number }
-  | { event: 'stage3_complete'; paragraph_id: number }
-  | { event: 'stage4_verdict'; paragraph_id: number; verdict: 'okay' | 'retry'; retry_count: number }
-  | { event: 'segment_complete'; paragraph_id: number; translation: string }
+  | { event: 'stage1_complete'; paragraph_id: number; retry_kind?: 'full_retry' }
+  | { event: 'stage2_complete'; paragraph_id: number; retry_kind?: 'full_retry' }
+  | { event: 'stage3_complete'; paragraph_id: number; retry_kind?: 'fix_pass' | 'full_retry'; fix_pass_count?: number; full_retry_count?: number }
+  | { event: 'stage4_verdict'; paragraph_id: number; verdict: 'ok' | 'fix_pass' | 'full_retry'; instruction: string; fix_pass_count: number; full_retry_count: number }
+  | { event: 'segment_complete'; paragraph_id: number; translation: string; retry_flag: boolean }
   | { event: 'pipeline_complete'; epub_path: string }
   | { event: 'pipeline_error'; detail: string }
 
@@ -37,8 +37,11 @@ export interface SegmentProgress {
   paragraphId: number
   index: number
   status: SegmentStatus
-  verdict: 'okay' | 'retry' | null
+  verdict: 'ok' | 'fix_pass' | 'full_retry' | null
   retryCount: number
+  retryFlag: boolean
+  fixPassCount: number
+  fullRetryCount: number
   translation: string | null
 }
 

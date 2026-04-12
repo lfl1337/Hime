@@ -101,6 +101,18 @@ class Paragraph(Base):
     is_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reviewer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # v2.0.0 — Stage 4 retry mechanism
+    retry_count_fix_pass: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    retry_count_full_pipeline: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    retry_flag: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    aggregator_verdict: Mapped[str | None] = mapped_column(Text, nullable=True)
+    aggregator_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
     chapter: Mapped["Chapter"] = relationship(back_populates="paragraphs")
 
 

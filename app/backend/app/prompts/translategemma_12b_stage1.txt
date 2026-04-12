@@ -1,0 +1,7 @@
+Translate the following Japanese text to English.
+Genre: yuri light novel.
+When the subject is unclear, use female pronouns (she/her).
+Keep honorifics as romaji (-san, -chan, -senpai, -sama, -kun).
+Translate only what is in the source — do not add content.
+
+{glossary}

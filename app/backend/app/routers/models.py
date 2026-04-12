@@ -29,6 +29,9 @@ async def request_download(model_key: str) -> DownloadResponse:
     Placeholder: queues a download request. The actual download logic is gated
     behind HIME_ALLOW_DOWNLOADS. When false, returns a queued response with a
     descriptive message.
+
+    W5: Backend-only/CLI — no frontend caller as of v1.1.2; planned for
+    model management UI in a future release.
     """
     if not settings.hime_allow_downloads:
         return DownloadResponse(

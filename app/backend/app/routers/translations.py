@@ -88,6 +88,7 @@ async def delete_translation(
     translation_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> None:
+    # W5: Backend-only/CLI — no frontend caller as of v1.1.2
     translation = await session.get(Translation, translation_id)
     if not translation:
         raise HTTPException(

@@ -10,4 +10,5 @@ _lexicon = LexiconService()
 
 @router.get("/translate", response_model=LexiconResult)
 async def lexicon_translate(text: str = Query(..., max_length=2000)) -> LexiconResult:
+    # W5: Backend-only/CLI — no frontend caller as of v1.1.2; planned for tooltip lookups
     return _lexicon.translate(text)

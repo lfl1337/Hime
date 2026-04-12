@@ -7,5 +7,41 @@
   "patience_metric": "eval_loss",
   "min_delta": 0.001,
   "min_steps": 1000,
-  "max_epochs": 3
+  "max_epochs": 3,
+  "curriculum": {
+    "enabled": true,
+    "tiers": [
+      {
+        "name": "strict",
+        "min_score": 0.7
+      },
+      {
+        "name": "expanded",
+        "min_score": 0.62
+      },
+      {
+        "name": "loose",
+        "min_score": 0.55
+      }
+    ],
+    "promotion_trigger": {
+      "metric": "eval_loss",
+      "patience": 3,
+      "min_delta": 0.001
+    },
+    "literary_files": [
+      "data/training/shuukura_jp.jsonl",
+      "data/training/seiyuu_radio_all_jp.jsonl"
+    ]
+  },
+  "qwen25_32b_completion": {
+    "status": "complete",
+    "completed_date": "2026-04-12",
+    "final_checkpoint": "checkpoint-12400",
+    "min_train_loss": 0.4521,
+    "eval_loss": 0.95,
+    "epoch": 2.1,
+    "accepted_threshold": 0.45,
+    "note": "train/eval gap (0.45 vs 0.95) confirms overfitting ceiling reached; 0.40 target not achievable without regression"
+  }
 }

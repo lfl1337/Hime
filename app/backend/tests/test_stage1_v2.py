@@ -24,14 +24,14 @@ class TestStage1Drafts:
             qwen32b="The cat runs.",
             translategemma12b="A cat is running.",
             qwen35_9b="Cats run.",
-            gemma4_e4b="The cat ran.",
+            llm_jp="The cat ran.",
             jmdict="cat run .",
         )
         assert d.source_jp == "猫が走る。"
         assert d.qwen32b == "The cat runs."
         assert d.translategemma12b == "A cat is running."
         assert d.qwen35_9b == "Cats run."
-        assert d.gemma4_e4b == "The cat ran."
+        assert d.llm_jp == "The cat ran."
         assert d.jmdict == "cat run ."
 
     def test_optional_fields_default_none(self):
@@ -40,7 +40,7 @@ class TestStage1Drafts:
         assert d.qwen32b is None
         assert d.translategemma12b is None
         assert d.qwen35_9b is None
-        assert d.gemma4_e4b is None
+        assert d.llm_jp is None
 
     def test_jmdict_is_always_str(self):
         from app.pipeline.stage1._types import Stage1Drafts
@@ -224,14 +224,13 @@ class TestAdapterQwen35_9b:
 
 
 # ---------------------------------------------------------------------------
-# Task 7: adapter_gemma4.py
+# Task 7: adapter_llm_jp.py
 # ---------------------------------------------------------------------------
 
-class TestAdapterGemma4:
-    @pytest.mark.asyncio
-    async def test_returns_string(self, monkeypatch):
-        from app.pipeline.stage1 import adapter_gemma4
+class TestAdapterLlmJp:
+    """Tests for adapter_llm_jp (LLM-jp-3-7.2B, transformers + BitsAndBytesConfig NF4)."""
 
+    def _make_fake_model_tokenizer(self):
         fake_model = MagicMock()
         fake_tokenizer = MagicMock()
         fake_tokenizer.apply_chat_template.return_value = "formatted"
@@ -240,42 +239,30 @@ class TestAdapterGemma4:
         fake_inputs = MagicMock()
         fake_inputs.__getitem__ = MagicMock(return_value=MagicMock())
         fake_tokenizer.return_value = fake_inputs
+        return fake_model, fake_tokenizer
 
-        fake_unsloth = types.ModuleType("unsloth")
-        mock_flm = MagicMock()
-        mock_flm.from_pretrained.return_value = (fake_model, fake_tokenizer)
-        mock_flm.for_inference = MagicMock()
-        fake_unsloth.FastLanguageModel = mock_flm
-        monkeypatch.setitem(sys.modules, "unsloth", fake_unsloth)
+    @pytest.mark.asyncio
+    async def test_returns_string(self, monkeypatch):
+        from app.pipeline.stage1 import adapter_llm_jp
 
-        adapter_gemma4._MODEL_CACHE.clear()
-        result = await adapter_gemma4.translate("風が吹いた。", rag_context="", glossary_context="")
+        fake_model, fake_tokenizer = self._make_fake_model_tokenizer()
+        adapter_llm_jp._MODEL_CACHE.clear()
+        monkeypatch.setattr(adapter_llm_jp, "_load_model", lambda: (fake_model, fake_tokenizer))
+
+        result = await adapter_llm_jp.translate("風が吹いた。", rag_context="", glossary_context="")
 
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
     async def test_enable_thinking_not_passed(self, monkeypatch):
-        """Gemma4 does not support enable_thinking — must not appear in generate() kwargs."""
-        from app.pipeline.stage1 import adapter_gemma4
+        """LLM-jp does not support enable_thinking — must not appear in generate() kwargs."""
+        from app.pipeline.stage1 import adapter_llm_jp
 
-        fake_model = MagicMock()
-        fake_tokenizer = MagicMock()
-        fake_tokenizer.apply_chat_template.return_value = "formatted"
-        fake_tokenizer.decode.return_value = "result"
-        fake_model.generate.return_value = [[1, 2, 3]]
-        fake_inputs = MagicMock()
-        fake_inputs.__getitem__ = MagicMock(return_value=MagicMock())
-        fake_tokenizer.return_value = fake_inputs
+        fake_model, fake_tokenizer = self._make_fake_model_tokenizer()
+        adapter_llm_jp._MODEL_CACHE.clear()
+        monkeypatch.setattr(adapter_llm_jp, "_load_model", lambda: (fake_model, fake_tokenizer))
 
-        fake_unsloth = types.ModuleType("unsloth")
-        mock_flm = MagicMock()
-        mock_flm.from_pretrained.return_value = (fake_model, fake_tokenizer)
-        mock_flm.for_inference = MagicMock()
-        fake_unsloth.FastLanguageModel = mock_flm
-        monkeypatch.setitem(sys.modules, "unsloth", fake_unsloth)
-
-        adapter_gemma4._MODEL_CACHE.clear()
-        await adapter_gemma4.translate("x", rag_context="", glossary_context="")
+        await adapter_llm_jp.translate("x", rag_context="", glossary_context="")
 
         call_kwargs = fake_model.generate.call_args.kwargs
         assert "enable_thinking" not in call_kwargs
@@ -371,8 +358,8 @@ class TestRunStage1Integration:
             lambda *a, **kw: _async_return("qwen35 translation"),
         )
         monkeypatch.setattr(
-            "app.pipeline.stage1.runner.adapter_gemma4.translate",
-            lambda *a, **kw: _async_return("gemma4 translation"),
+            "app.pipeline.stage1.runner.adapter_llm_jp.translate",
+            lambda *a, **kw: _async_return("llm_jp translation"),
         )
         monkeypatch.setattr(
             "app.pipeline.stage1.runner.adapter_jmdict.translate",
@@ -390,7 +377,7 @@ class TestRunStage1Integration:
         assert result.qwen32b == "qwen32b translation"
         assert result.translategemma12b == "translategemma translation"
         assert result.qwen35_9b == "qwen35 translation"
-        assert result.gemma4_e4b == "gemma4 translation"
+        assert result.llm_jp == "llm_jp translation"
         assert result.jmdict == "jmdict gloss"
 
     @pytest.mark.asyncio
@@ -409,8 +396,8 @@ class TestRunStage1Integration:
         )
         monkeypatch.setattr("app.pipeline.stage1.runner.adapter_qwen35_9b.translate", fail)
         monkeypatch.setattr(
-            "app.pipeline.stage1.runner.adapter_gemma4.translate",
-            lambda *a, **kw: _async_return("gemma4 ok"),
+            "app.pipeline.stage1.runner.adapter_llm_jp.translate",
+            lambda *a, **kw: _async_return("llm_jp ok"),
         )
         monkeypatch.setattr(
             "app.pipeline.stage1.runner.adapter_jmdict.translate",
@@ -424,7 +411,7 @@ class TestRunStage1Integration:
         assert result.qwen32b is None
         assert result.translategemma12b == "gemma translation"
         assert result.qwen35_9b is None
-        assert result.gemma4_e4b == "gemma4 ok"
+        assert result.llm_jp == "llm_jp ok"
         assert result.jmdict == "jmdict fallback"
 
     @pytest.mark.asyncio
@@ -461,8 +448,8 @@ class TestRunStage1Integration:
             await oom_first_call_then_ok("qwen35"),
         )
         monkeypatch.setattr(
-            "app.pipeline.stage1.runner.adapter_gemma4.translate",
-            await oom_first_call_then_ok("gemma4"),
+            "app.pipeline.stage1.runner.adapter_llm_jp.translate",
+            await oom_first_call_then_ok("llm_jp"),
         )
         monkeypatch.setattr(
             "app.pipeline.stage1.runner.adapter_jmdict.translate",
@@ -476,7 +463,7 @@ class TestRunStage1Integration:
         # All three local adapters should have succeeded in sequential retry
         assert result.translategemma12b == "translategemma sequential result"
         assert result.qwen35_9b == "qwen35 sequential result"
-        assert result.gemma4_e4b == "gemma4 sequential result"
+        assert result.llm_jp == "llm_jp sequential result"
         # Qwen32B (Ollama) always runs parallel and is unaffected by local OOM
         assert result.qwen32b == "qwen32b ok"
 

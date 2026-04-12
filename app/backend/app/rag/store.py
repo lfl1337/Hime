@@ -89,14 +89,18 @@ class SeriesStore:
 
     def query(self, query_embedding: list[float], top_k: int = 5) -> list[dict]:
         conn = self._get()
+        # P2-F2 fix: sqlite-vec 0.1.9+ requires `AND k = ?` on vec0 virtual-table
+        # knn queries — `LIMIT ?` alone raises "A LIMIT or 'k = ?' constraint is
+        # required on vec0 knn queries". Binding k explicitly is the documented
+        # shape (see https://alexgarcia.xyz/sqlite-vec/api-reference.html#knn).
         rows = conn.execute(
             """
             SELECT c.book_id, c.chapter_id, c.paragraph_id, c.source_text, c.translated_text, v.distance
             FROM chunk_vectors v
             JOIN chunks c ON c.id = v.chunk_id
             WHERE v.embedding MATCH ?
+              AND k = ?
             ORDER BY v.distance
-            LIMIT ?
             """,
             (json.dumps(query_embedding), top_k),
         ).fetchall()

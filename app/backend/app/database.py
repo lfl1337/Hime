@@ -1,5 +1,7 @@
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -7,6 +9,24 @@ from .config import settings
 
 engine = create_async_engine(settings.db_url, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_fks(dbapi_connection, connection_record):
+    """Enable SQLite foreign key constraints on every new connection.
+
+    SQLite disables FKs by default; this listener flips them on for every
+    low-level DBAPI connection (including aiosqlite), and the PRAGMA persists
+    for the lifetime of that connection.
+
+    Guard: only runs for SQLite connections — avoids a syntax error if the
+    engine is ever pointed at PostgreSQL or another dialect.
+    """
+    if "sqlite" not in type(dbapi_connection).__module__:
+        return
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON")
+    cursor.close()
 
 
 class Base(DeclarativeBase):
@@ -40,6 +60,14 @@ _V121_TRANSLATION_COLS = [
     ("confidence_log", "TEXT"),
 ]
 
+_V200_PARAGRAPH_RETRY_COLS = [
+    ("retry_count_fix_pass",      "INTEGER NOT NULL DEFAULT 0"),
+    ("retry_count_full_pipeline", "INTEGER NOT NULL DEFAULT 0"),
+    ("retry_flag",                "BOOLEAN NOT NULL DEFAULT 0"),
+    ("aggregator_verdict",        "TEXT"),
+    ("aggregator_instruction",    "TEXT"),
+]
+
 
 async def init_db() -> None:
     """Create all tables on startup and apply inline column migrations."""
@@ -69,6 +97,13 @@ async def init_db() -> None:
         existing_par = {r[1] for r in rows_par}
         for col, dtype in _V121_PARAGRAPH_COLS:
             if col not in existing_par:
+                await conn.execute(text(f"ALTER TABLE paragraphs ADD COLUMN {col} {dtype}"))
+
+        # v2.0.0: paragraph retry-tracking columns (Stage 4 two-path retry)
+        rows_par2 = (await conn.execute(text("PRAGMA table_info(paragraphs)"))).fetchall()
+        existing_par2 = {r[1] for r in rows_par2}
+        for col, dtype in _V200_PARAGRAPH_RETRY_COLS:
+            if col not in existing_par2:
                 await conn.execute(text(f"ALTER TABLE paragraphs ADD COLUMN {col} {dtype}"))
 
         # v1.2.1: book columns (series tracking)

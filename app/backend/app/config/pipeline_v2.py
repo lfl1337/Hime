@@ -1,95 +1,100 @@
 """Centralized model ID + path registry for Pipeline v2.
 
-Single source of truth — Stage 2, Stage 3, and future stages read from here
-instead of hardcoding HF IDs in their own modules. Environment variables
-override defaults for local path pinning.
+Single source of truth for all stage model IDs and local paths.
+Uses Pydantic BaseSettings to correctly read from .env (POST-1 fix:
+raw os.environ.get() at import-time was ignoring .env values).
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from ..core.paths import MODELS_DIR
 
-
-# Stage 1A — Qwen2.5-32B + LoRA
-STAGE1A_MODEL_ID: str = os.environ.get(
-    "HIME_STAGE1A_MODEL_ID",
-    "lmstudio-community/Qwen2.5-32B-Instruct-GGUF",
-)
-STAGE1A_LOCAL_PATH: Path = Path(os.environ.get(
-    "HIME_STAGE1A_LOCAL_PATH",
-    str(MODELS_DIR / "lmstudio-community" / "Qwen2.5-32B-Instruct-GGUF"),
-))
-
-# Stage 1B — TranslateGemma-12B-IT
-STAGE1B_MODEL_ID: str = os.environ.get(
-    "HIME_STAGE1B_MODEL_ID",
-    "google/translategemma-12b-it",
-)
-STAGE1B_LOCAL_PATH: Path = Path(os.environ.get(
-    "HIME_STAGE1B_LOCAL_PATH",
-    str(MODELS_DIR / "translategemma-12b"),
-))
-
-# Stage 1C — Qwen3-9B
-STAGE1C_MODEL_ID: str = os.environ.get(
-    "HIME_STAGE1C_MODEL_ID",
-    "Qwen/Qwen3-9B",
-)
-STAGE1C_LOCAL_PATH: Path = Path(os.environ.get(
-    "HIME_STAGE1C_LOCAL_PATH",
-    str(MODELS_DIR / "qwen3-9b"),
-))
-
-# Stage 1D — Gemma4 E4B
-STAGE1D_MODEL_ID: str = os.environ.get(
-    "HIME_STAGE1D_MODEL_ID",
-    "google/gemma-4-e4b",
-)
-STAGE1D_LOCAL_PATH: Path = Path(os.environ.get(
-    "HIME_STAGE1D_LOCAL_PATH",
-    str(MODELS_DIR / "gemma4-e4b"),
-))
-
-# Stage 2 — TranslateGemma-27B-IT (Merger)
-STAGE2_MODEL_ID: str = os.environ.get(
-    "HIME_STAGE2_MODEL_ID",
-    "google/translategemma-27b-it",
-)
-STAGE2_LOCAL_PATH: Path = Path(os.environ.get(
-    "HIME_STAGE2_LOCAL_PATH",
-    str(MODELS_DIR / "translategemma-27b"),
-))
-
-# Stage 3 — Qwen3-30B-A3B MoE (Polish)
-STAGE3_MODEL_ID: str = os.environ.get(
-    "HIME_STAGE3_MODEL_ID",
-    "Qwen/Qwen3-30B-A3B",
-)
-STAGE3_LOCAL_PATH: Path = Path(os.environ.get(
-    "HIME_STAGE3_LOCAL_PATH",
-    str(MODELS_DIR / "qwen3-30b"),
-))
-
-# Stage 4 — Reader Panel (Qwen3-2B × 15 personas)
-STAGE4_READER_MODEL_ID: str = os.environ.get(
-    "HIME_STAGE4_READER_MODEL_ID",
-    str(MODELS_DIR / "qwen3-2b"),
+# --- Locate .env (mirrors config/__init__.py logic) ---
+_HIME_DATA_DIR = os.environ.get("HIME_DATA_DIR")
+_ENV_FILE = (
+    Path(_HIME_DATA_DIR) / ".env"
+    if _HIME_DATA_DIR
+    else Path(__file__).parent.parent.parent / ".env"
 )
 
-# Stage 4 — Aggregator (LFM2-24B)
-STAGE4_AGGREGATOR_MODEL_ID: str = os.environ.get(
-    "HIME_STAGE4_AGGREGATOR_MODEL_ID",
-    str(MODELS_DIR / "lfm2-24b"),
-)
+
+class _PipelineV2Settings(BaseSettings):
+    """Model ID + local path settings for Pipeline v2.
+
+    Field names match HIME_* env-var names (via alias).
+    Values loaded from .env file + shell env (shell takes priority).
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=str(_ENV_FILE),
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    hime_stage1a_model_id: str = Field(
+        default="lmstudio-community/Qwen2.5-32B-Instruct-GGUF"
+    )
+    hime_stage1a_local_path: str = Field(
+        default=str(MODELS_DIR / "lmstudio-community" / "Qwen2.5-32B-Instruct-GGUF")
+    )
+
+    hime_stage1b_model_id: str = Field(default="google/translategemma-12b-it")
+    hime_stage1b_local_path: str = Field(
+        default=str(MODELS_DIR / "translategemma-12b")
+    )
+
+    hime_stage1c_model_id: str = Field(default="Qwen/Qwen3-9B")
+    hime_stage1c_local_path: str = Field(default=str(MODELS_DIR / "qwen3-9b"))
+
+    # Stage 1D: Gemma4 E4B default — replaced by Sarashina2 in Phase 6
+    hime_stage1d_model_id: str = Field(default="google/gemma-4-e4b")
+    hime_stage1d_local_path: str = Field(default=str(MODELS_DIR / "gemma4-e4b"))
+
+    hime_stage2_model_id: str = Field(default="google/translategemma-27b-it")
+    hime_stage2_local_path: str = Field(
+        default=str(MODELS_DIR / "translategemma-27b")
+    )
+
+    hime_stage3_model_id: str = Field(default="Qwen/Qwen3-30B-A3B")
+    hime_stage3_local_path: str = Field(default=str(MODELS_DIR / "qwen3-30b"))
+
+    hime_stage4_reader_model_id: str = Field(
+        default=str(MODELS_DIR / "qwen3-2b")
+    )
+    hime_stage4_aggregator_model_id: str = Field(
+        default=str(MODELS_DIR / "lfm2-24b")
+    )
+
+
+_cfg = _PipelineV2Settings()
+
+# ---------------------------------------------------------------------------
+# Public module-level constants — interface UNCHANGED, downstream imports work.
+# ---------------------------------------------------------------------------
+STAGE1A_MODEL_ID: str = _cfg.hime_stage1a_model_id
+STAGE1A_LOCAL_PATH: Path = Path(_cfg.hime_stage1a_local_path)
+STAGE1B_MODEL_ID: str = _cfg.hime_stage1b_model_id
+STAGE1B_LOCAL_PATH: Path = Path(_cfg.hime_stage1b_local_path)
+STAGE1C_MODEL_ID: str = _cfg.hime_stage1c_model_id
+STAGE1C_LOCAL_PATH: Path = Path(_cfg.hime_stage1c_local_path)
+STAGE1D_MODEL_ID: str = _cfg.hime_stage1d_model_id
+STAGE1D_LOCAL_PATH: Path = Path(_cfg.hime_stage1d_local_path)
+STAGE2_MODEL_ID: str = _cfg.hime_stage2_model_id
+STAGE2_LOCAL_PATH: Path = Path(_cfg.hime_stage2_local_path)
+STAGE3_MODEL_ID: str = _cfg.hime_stage3_model_id
+STAGE3_LOCAL_PATH: Path = Path(_cfg.hime_stage3_local_path)
+STAGE4_READER_MODEL_ID: str = _cfg.hime_stage4_reader_model_id
+STAGE4_AGGREGATOR_MODEL_ID: str = _cfg.hime_stage4_aggregator_model_id
 
 
 def get_all_model_ids() -> dict[str, str]:
-    """Return all Pipeline v2 model IDs as a dict for diagnostics."""
-    # Stage 4 IDs come from Settings (read from .env) rather than os.environ directly.
-    # Import lazily to avoid circular imports at module load time.
-    from . import settings as _settings  # noqa: PLC0415
+    """Return all Pipeline v2 model IDs as a dict (for diagnostics/health checks)."""
     return {
         "stage1a": STAGE1A_MODEL_ID,
         "stage1b": STAGE1B_MODEL_ID,
@@ -97,6 +102,6 @@ def get_all_model_ids() -> dict[str, str]:
         "stage1d": STAGE1D_MODEL_ID,
         "stage2": STAGE2_MODEL_ID,
         "stage3": STAGE3_MODEL_ID,
-        "stage4_reader": str(getattr(_settings, "stage4_reader_model_id", STAGE4_READER_MODEL_ID)),
-        "stage4_aggregator": str(getattr(_settings, "stage4_aggregator_model_id", STAGE4_AGGREGATOR_MODEL_ID)),
+        "stage4_reader": STAGE4_READER_MODEL_ID,
+        "stage4_aggregator": STAGE4_AGGREGATOR_MODEL_ID,
     }

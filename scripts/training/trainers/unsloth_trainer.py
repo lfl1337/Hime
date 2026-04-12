@@ -63,15 +63,16 @@ class UnslothTrainer:
 
         # Patch module-level globals so all functions pick up config values
         lora_rank = getattr(args, 'rank', None) or 16
-        _th.MODEL_NAME   = config.model
-        _th.MAX_SEQ_LEN  = config.max_seq
-        _th.BATCH_SIZE   = config.batch_size
-        _th.GRAD_ACCUM   = config.grad_accum
-        _th.LORA_RANK    = lora_rank
-        _th.LORA_ALPHA   = lora_rank * 2
-        _th.OUTPUT_DIR   = output_dir
-        _th.TRAINING_DIR = training_dir
-        _th.ADAPTER_NAME = config.lora_dir
+        _th.MODEL_NAME     = config.model
+        _th.MAX_SEQ_LEN    = config.max_seq
+        _th.BATCH_SIZE     = config.batch_size
+        _th.GRAD_ACCUM     = config.grad_accum
+        _th.LORA_RANK      = lora_rank
+        _th.LORA_ALPHA     = lora_rank * 2
+        _th.LORA_DROPOUT   = config.lora_dropout   # 0.0 → Unsloth fast path enabled
+        _th.OUTPUT_DIR     = output_dir
+        _th.TRAINING_DIR   = training_dir
+        _th.ADAPTER_NAME   = config.lora_dir
 
         # Build stop config from CLI args
         tl = getattr(args, 'target_loss', None)

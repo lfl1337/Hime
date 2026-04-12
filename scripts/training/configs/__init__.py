@@ -20,6 +20,7 @@ class TrainingConfig:
     dtype: Literal["bf16", "fp16"] = "bf16"
     quant: Literal["nf4", "int4", "none"] = "nf4"
     batch_size: int = 1
+    lora_dropout: float = 0.05   # 0.0 enables Unsloth fast path (2–3× kernel speedup)
     enable_thinking: bool = False
     moe: bool = False
     notes: str = ""

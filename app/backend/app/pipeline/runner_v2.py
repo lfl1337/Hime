@@ -205,7 +205,7 @@ async def _run_ladder(
         "qwen32b": drafts.qwen32b or "",
         "translategemma": drafts.translategemma12b or "",
         "qwen35_9b": drafts.qwen35_9b or "",
-        "gemma4_e4b": drafts.gemma4_e4b or "",
+        "llm_jp": drafts.llm_jp or "",
         "jmdict": drafts.jmdict,
     }
 

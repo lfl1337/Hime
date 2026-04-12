@@ -59,7 +59,7 @@ async def make_dry_run_stage1_drafts(
         qwen32b=stamp("qwen32b"),
         translategemma12b=stamp("translategemma"),
         qwen35_9b=stamp("qwen35_9b"),
-        gemma4_e4b=stamp("gemma4_e4b"),
+        llm_jp=stamp("llm_jp"),
     )
 
 

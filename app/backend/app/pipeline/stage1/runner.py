@@ -25,7 +25,7 @@ from . import (
     adapter_qwen32b,
     adapter_translategemma,
     adapter_qwen35_9b,
-    adapter_gemma4,
+    adapter_llm_jp,
     adapter_jmdict,
 )
 
@@ -69,7 +69,7 @@ async def _run_local_adapters_parallel(
     results = await asyncio.gather(
         adapter_translategemma.translate(source_jp, rag_context=rag_context, glossary_context=glossary_context),
         adapter_qwen35_9b.translate(source_jp, rag_context=rag_context, glossary_context=glossary_context),
-        adapter_gemma4.translate(source_jp, rag_context=rag_context, glossary_context=glossary_context),
+        adapter_llm_jp.translate(source_jp, rag_context=rag_context, glossary_context=glossary_context),
         return_exceptions=True,
     )
     return results[0], results[1], results[2]
@@ -92,9 +92,9 @@ async def _run_local_adapters_sequential(
     adapters = [
         adapter_translategemma.translate,
         adapter_qwen35_9b.translate,
-        adapter_gemma4.translate,
+        adapter_llm_jp.translate,
     ]
-    adapter_names = ["translategemma", "qwen35_9b", "gemma4"]
+    adapter_names = ["translategemma", "qwen35_9b", "llm_jp"]
 
     for fn, name in zip(adapters, adapter_names):
         try:
@@ -174,5 +174,5 @@ async def run_stage1(
         qwen32b=qwen32b_result,
         translategemma12b=_extract(tgemma_raw, "translategemma"),
         qwen35_9b=_extract(q35_raw, "qwen35_9b"),
-        gemma4_e4b=_extract(g4_raw, "gemma4"),
+        llm_jp=_extract(g4_raw, "llm_jp"),
     )

@@ -119,8 +119,8 @@ def _drafts_to_stage1_outputs(drafts: Stage1Drafts) -> dict[str, str]:
         out["translategemma12b"] = drafts.translategemma12b
     if drafts.qwen35_9b:
         out["qwen35_9b"] = drafts.qwen35_9b
-    if drafts.gemma4_e4b:
-        out["gemma4_e4b"] = drafts.gemma4_e4b
+    if drafts.llm_jp:
+        out["llm_jp"] = drafts.llm_jp
     out["jmdict"] = drafts.jmdict  # always include, even if empty
     return out
 
@@ -169,7 +169,7 @@ async def run_pipeline(
         # ------------------------------------------------------------------ #
         # Stage 1 — 5 adapters (4 neural + 1 lexical)                        #
         # ------------------------------------------------------------------ #
-        adapter_names = ["qwen32b", "translategemma12b", "qwen35_9b", "gemma4_e4b", "jmdict"]
+        adapter_names = ["qwen32b", "translategemma12b", "qwen35_9b", "llm_jp", "jmdict"]
         await ws_queue.put({"event": "stage1_start", "models": adapter_names})
         await _checkpoint(job_id, current_stage="stage1")
 

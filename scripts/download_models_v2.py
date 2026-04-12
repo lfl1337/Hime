@@ -51,12 +51,12 @@ MODELS: list[dict] = [
         "local_dir": MODELS_DIR / "qwen3-30b",
     },
     {
-        "key": "qwen3-2b",
-        "hf_id": "Qwen/Qwen3-2B",
+        "key": "qwen3.5-2b",
+        "hf_id": "Qwen/Qwen3.5-2B",
         "description": "Stage 4 — Reader Panel (15 Personas)",
-        "size_gb": 1.2,
+        "size_gb": 1.8,
         "method": "unsloth",
-        "local_dir": MODELS_DIR / "qwen3-2b",
+        "local_dir": MODELS_DIR / "qwen3.5-2b",
     },
     {
         "key": "gemma4-e4b",

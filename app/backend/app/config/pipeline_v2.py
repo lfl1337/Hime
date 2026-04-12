@@ -49,7 +49,7 @@ class _PipelineV2Settings(BaseSettings):
         default=str(MODELS_DIR / "translategemma-12b")
     )
 
-    hime_stage1c_model_id: str = Field(default="Qwen/Qwen3-9B")
+    hime_stage1c_model_id: str = Field(default="Qwen/Qwen3.5-9B")
     hime_stage1c_local_path: str = Field(default=str(MODELS_DIR / "qwen3-9b"))
 
     # Stage 1D: LLM-jp-3-7.2B-Instruct3 (Japanese-native, NF4 4-bit)
@@ -65,7 +65,7 @@ class _PipelineV2Settings(BaseSettings):
     hime_stage3_local_path: str = Field(default=str(MODELS_DIR / "qwen3-30b"))
 
     hime_stage4_reader_model_id: str = Field(
-        default=str(MODELS_DIR / "qwen3-2b")
+        default=str(MODELS_DIR / "qwen3.5-2b")
     )
     hime_stage4_aggregator_model_id: str = Field(
         default=str(MODELS_DIR / "lfm2-24b")

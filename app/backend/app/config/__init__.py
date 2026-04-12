@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     # Pipeline Stage 4 — Reader Panel + Aggregator (v2)
     # Defaults point to local model paths (resolved from MODELS_DIR).
     # Override via .env: STAGE4_READER_MODEL_ID=/absolute/path or HF hub id.
-    stage4_reader_model_id: str = str(_paths.MODELS_DIR / "qwen3-2b")
+    stage4_reader_model_id: str = str(_paths.MODELS_DIR / "qwen3.5-2b")
     stage4_aggregator_model_id: str = str(_paths.MODELS_DIR / "lfm2-24b")
     stage4_reader_dtype: str = "nf4"       # nf4 | fp4 | fp16
     stage4_aggregator_dtype: str = "int4"  # int4 | fp16

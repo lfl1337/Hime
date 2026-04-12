@@ -52,7 +52,7 @@ def _load_model() -> tuple[Any, Any]:
     local_path = _LOCAL_MODEL_DIR if _LOCAL_MODEL_DIR.exists() else _HF_MODEL_ID
     _log.info("Stage 2: loading TranslateGemma-27B from %s", local_path)
 
-    tokenizer = AutoTokenizer.from_pretrained(str(local_path))
+    tokenizer = AutoTokenizer.from_pretrained(str(local_path), fix_mistral_regex=True)
     model = AutoModelForCausalLM.from_pretrained(
         str(local_path),
         device_map="auto",

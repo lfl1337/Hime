@@ -24,7 +24,9 @@ class TransformersTrainer:
             )
             model_path = _MODELS_DIR / config.lora_dir
             source = str(model_path) if model_path.exists() else config.model
-            tok = AutoTokenizer.from_pretrained(source, trust_remote_code=True)
+            tok = AutoTokenizer.from_pretrained(
+                source, trust_remote_code=True, fix_mistral_regex=True
+            )
             print(f"[validate:transformers] tokenizer vocab_size={tok.vocab_size}")
         except (ImportError, OSError) as exc:
             print(f"[validate:transformers] tokenizer probe skipped: {exc}")

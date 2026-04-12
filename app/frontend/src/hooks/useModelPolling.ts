@@ -4,16 +4,18 @@ import { fetchAllRuns } from '../api/training'
 import type { ModelLiveStatus } from '../types/comparison'
 
 const INITIAL: Record<string, ModelLiveStatus> = {
-  gemma:    { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
-  deepseek: { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
-  qwen32b:  { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
+  qwen32b:        { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
+  translategemma: { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
+  qwen35_9b:      { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
+  sarashina2:     { inferenceOnline: false, inferenceEndpoint: null, loadedModel: null, isTraining: false, trainingProgress: null },
 }
 
 function runNameToKey(runName: string): string | null {
   const n = runName.toLowerCase()
   if (n.includes('qwen2.5-32b') || n.includes('qwen2.5_32b')) return 'qwen32b'
-  if (n.includes('gemma')) return 'gemma'
-  if (n.includes('deepseek')) return 'deepseek'
+  if (n.includes('translategemma') || n.includes('translate-gemma') || n.includes('translate_gemma')) return 'translategemma'
+  if (n.includes('qwen3.5-9b') || n.includes('qwen3.5_9b') || n.includes('qwen35_9b')) return 'qwen35_9b'
+  if (n.includes('sarashina2') || n.includes('sarashina-2')) return 'sarashina2'
   return null
 }
 
@@ -50,9 +52,10 @@ export function useModelPolling(active: boolean): {
         // Start with the initial 3 Stage 1 keys, then extend with any
         // additional keys returned by the backend (consensus, stage2, stage3).
         const next: Record<string, ModelLiveStatus> = {
-          gemma:    { ...INITIAL.gemma },
-          deepseek: { ...INITIAL.deepseek },
-          qwen32b:  { ...INITIAL.qwen32b },
+          qwen32b:        { ...INITIAL.qwen32b },
+          translategemma: { ...INITIAL.translategemma },
+          qwen35_9b:      { ...INITIAL.qwen35_9b },
+          sarashina2:     { ...INITIAL.sarashina2 },
         }
 
         // Populate inference status — accept any key the backend returns

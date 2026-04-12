@@ -1,6 +1,6 @@
 // Inference model health
 export interface ModelEndpoint {
-  key: 'gemma' | 'deepseek' | 'qwen32b'
+  key: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2'
   name: string
   endpoint: string
   online: boolean
@@ -37,9 +37,9 @@ export interface ComparisonState {
   inputText: string
   isComparing: boolean
   currentJobId: number | null
-  modelOutputs: Record<'gemma' | 'deepseek' | 'qwen32b', ModelOutput>
+  modelOutputs: Record<'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2', ModelOutput>
   consensusText: string
   consensusDone: boolean
   modelEndpoints: ModelEndpoint[]
-  liveStatuses: Record<'gemma' | 'deepseek' | 'qwen32b', ModelLiveStatus>
+  liveStatuses: Record<'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2', ModelLiveStatus>
 }

@@ -2,19 +2,20 @@ import { useState } from 'react'
 import type { ModelOutput } from '../../types/comparison'
 
 interface ModelPanelProps {
-  modelKey: 'gemma' | 'deepseek' | 'qwen32b'
+  modelKey: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2'
   displayName: string
-  accentColor: 'blue' | 'emerald' | 'amber'
+  accentColor: 'blue' | 'emerald' | 'amber' | 'purple'
   online: boolean
   isTraining: boolean
   output: ModelOutput
   unavailable?: boolean
 }
 
-const ACCENT_BADGE: Record<'blue' | 'emerald' | 'amber', string> = {
+const ACCENT_BADGE: Record<'blue' | 'emerald' | 'amber' | 'purple', string> = {
   blue:    'bg-blue-900/50 text-blue-300 border border-blue-700/50',
   emerald: 'bg-emerald-900/50 text-emerald-300 border border-emerald-700/50',
   amber:   'bg-amber-900/50 text-amber-300 border border-amber-700/50',
+  purple:  'bg-purple-900/50 text-purple-300 border border-purple-700/50',
 }
 
 export function ModelPanel({ displayName, accentColor, online, isTraining, output, unavailable }: ModelPanelProps) {

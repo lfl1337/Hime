@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import type { ModelLiveStatus } from '../../types/comparison'
 
 interface LiveModelCardProps {
-  modelKey: 'gemma' | 'deepseek' | 'qwen32b'
+  modelKey: 'qwen32b' | 'translategemma' | 'qwen35_9b' | 'sarashina2'
   displayName: string
   status: ModelLiveStatus
 }

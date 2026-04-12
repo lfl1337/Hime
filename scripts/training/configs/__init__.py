@@ -19,6 +19,7 @@ class TrainingConfig:
     trainer: Literal["unsloth", "transformers"] = "unsloth"
     dtype: Literal["bf16", "fp16"] = "bf16"
     quant: Literal["nf4", "int4", "none"] = "nf4"
+    batch_size: int = 1
     enable_thinking: bool = False
     moe: bool = False
     notes: str = ""

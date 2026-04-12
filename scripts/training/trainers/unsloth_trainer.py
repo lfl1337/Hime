@@ -65,6 +65,7 @@ class UnslothTrainer:
         lora_rank = getattr(args, 'rank', None) or 16
         _th.MODEL_NAME   = config.model
         _th.MAX_SEQ_LEN  = config.max_seq
+        _th.BATCH_SIZE   = config.batch_size
         _th.GRAD_ACCUM   = config.grad_accum
         _th.LORA_RANK    = lora_rank
         _th.LORA_ALPHA   = lora_rank * 2

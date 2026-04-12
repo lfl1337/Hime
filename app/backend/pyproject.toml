@@ -30,6 +30,8 @@ dependencies = [
     # huggingface_hub: model download / cache helpers for Stage 4 pipeline
     "huggingface_hub>=0.24.0",
     "mcp>=1.0.0",
+    "qdrant-client>=1.9.1",
+    "watchdog>=6.0.0",
 ]
 
 [project.optional-dependencies]

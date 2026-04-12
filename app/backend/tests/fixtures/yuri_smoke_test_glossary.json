@@ -1,0 +1,10 @@
+{
+  "book_id": "smoke_test_yuri",
+  "characters": [
+    {"jp": "\u5343\u590f", "en": "Chinatsu", "role": "protagonist (female)"},
+    {"jp": "\u594f",   "en": "Kanade",   "role": "main character (female)"},
+    {"jp": "\u85cd",   "en": "Ai",       "role": "senpai (female)"},
+    {"jp": "\u51db",   "en": "Rin",      "role": "senpai (female)"},
+    {"jp": "\u5f69\u8a64", "en": "Ayame",    "role": "side character (female)"}
+  ]
+}

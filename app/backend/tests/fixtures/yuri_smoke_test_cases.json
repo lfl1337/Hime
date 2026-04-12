@@ -1,7 +1,12 @@
 [
   {
+    "_README": "source_has_male_characters (bool, default false): when true, male pronouns in forbidden_substrings are NOT checked — they may be required for correct translation. Set false for scenes with exclusively female characters.",
+    "_schema_version": "1.1"
+  },
+  {
     "id": "T1",
     "jp": "\u300c\u597d\u304d\u3060\u3088\u3001\u5343\u590f\u300d/ \u300c\u3048\u2026\u2026\u308f\u305f\u3057\u306e\u3053\u3068\uff1f\u300d",
+    "source_has_male_characters": false,
     "expected_substrings": ["Chinatsu"],
     "forbidden_substrings": ["Chiha"],
     "fail_class": "name_hallucination"
@@ -9,6 +14,7 @@
   {
     "id": "T2",
     "jp": "\u300c\u5148\u8f29\u3001\u307e\u305f\u4e00\u7dd2\u306b\u90e8\u5ba4\u306b\u6765\u3066\u304f\u308c\u307e\u3059\u304b?\u300d\u3068\u594f\u306f\u5fae\u7b11\u3093\u3060\u3002",
+    "source_has_male_characters": false,
     "expected_substrings": ["Kanade"],
     "forbidden_substrings": ["Sora"],
     "fail_class": "name_hallucination"
@@ -16,6 +22,7 @@
   {
     "id": "T3",
     "jp": "\u685c\u306e\u82b1\u3073\u3089\u304c\u821e\u3044\u6563\u308b\u4e2d\u3001\u4e8c\u4eba\u306f\u9ed8\u3063\u3066\u6b69\u3044\u3066\u3044\u305f\u3002",
+    "source_has_male_characters": false,
     "expected_substrings": [],
     "forbidden_substrings": [],
     "max_length_chars": 200,
@@ -25,6 +32,7 @@
   {
     "id": "T4",
     "jp": "(\u597d\u304d\u3063\u3066\u8a00\u3048\u306a\u3044\u3002\u3067\u3082\u4f55\u3082\u8a00\u308f\u306a\u3044\u306e\u306f\u3082\u3063\u3068\u3064\u3089\u3044\u3002)",
+    "source_has_male_characters": false,
     "expected_substrings": [],
     "forbidden_substrings": [],
     "fail_class": "baseline_ok",
@@ -32,7 +40,8 @@
   },
   {
     "id": "T5",
-    "jp": "\u300c\u3042\u306a\u305f\u306e\u305d\u3070\u306b\u3044\u305f\u3044\u3002\u305a\u3063\u3068\u3001\u305a\u3063\u3068\u300d/ \u6d99\u304c\u96f6\u308c\u305f\u3002\u9707\u3048\u308b\u624b\u3092\u4f38\u3070\u3057\u305f\u3002",
+    "jp": "\u300c\u3042\u306a\u305f\u306e\u305d\u3070\u306b\u3044\u305f\u3044\u3002\u305a\u3063\u3068\u3001\u305a\u3063\u3068\u300d/ \u6d99\u304c\u96f6\u308c\u305f\u3002\u9707\u3048\u308b\u624b\u3092\u4f38\u3073\u3057\u305f\u3002",
+    "source_has_male_characters": false,
     "expected_substrings": ["she"],
     "forbidden_substrings": [" him", " his", " he "],
     "fail_class": "pronoun_masculinization"
@@ -40,6 +49,7 @@
   {
     "id": "T6",
     "jp": "\u300c\u85cd\u5148\u8f29\u306f\u3044\u3064\u3082\u51db\u5148\u8f29\u306e\u3053\u3068\u3092\u6c17\u306b\u304b\u3051\u3066\u308b\u300d\u3068\u5f69\u8a64\u306f\u5fae\u7b11\u3093\u3060\u3002",
+    "source_has_male_characters": false,
     "expected_substrings": ["Ai", "Rin", "Ayame"],
     "forbidden_substrings": ["Aoi"],
     "fail_class": "name_hallucination"

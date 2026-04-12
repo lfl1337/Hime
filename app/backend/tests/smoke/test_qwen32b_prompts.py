@@ -24,10 +24,22 @@ _CHECKPOINT_PATH = (
 _FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 
+_MALE_PRONOUN_SUBSTRINGS = {" him", " his", " he "}
+
+
 def _check_case(tc: dict, output: str) -> bool:
-    """Returns True if all pass criteria met."""
+    """Returns True if all pass criteria met.
+
+    forbidden_substrings that are male pronouns (" him", " his", " he ") are only
+    enforced when source_has_male_characters is False (or absent). If the source
+    text contains male characters, male pronouns in the translation are correct and
+    must not be forbidden.
+    """
+    has_male = tc.get("source_has_male_characters", False)
     output_lower = output.lower()
     for forbidden in tc.get("forbidden_substrings", []):
+        if has_male and forbidden in _MALE_PRONOUN_SUBSTRINGS:
+            continue  # male pronouns allowed when source has male characters
         if forbidden.lower() in output_lower:
             return False
     for expected in tc.get("expected_substrings", []):
@@ -82,9 +94,13 @@ def test_qwen32b_yuri_prompt_regression():
         build_character_list,
     )
 
-    test_cases = json.loads(
-        (_FIXTURES / "yuri_smoke_test_cases.json").read_text(encoding="utf-8")
-    )
+    # Filter out metadata entries (_README, _schema_version) — only keep dicts with "id"
+    test_cases = [
+        tc for tc in json.loads(
+            (_FIXTURES / "yuri_smoke_test_cases.json").read_text(encoding="utf-8")
+        )
+        if "id" in tc
+    ]
     glossary_data = json.loads(
         (_FIXTURES / "yuri_smoke_test_glossary.json").read_text(encoding="utf-8")
     )

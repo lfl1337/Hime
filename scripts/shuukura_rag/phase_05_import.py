@@ -108,8 +108,8 @@ def insert_chapters_and_paragraphs(
                 conn.execute(
                     """
                     INSERT INTO chapters (book_id, chapter_index, title, total_paragraphs,
-                                         translated_paragraphs, status)
-                    VALUES (?, ?, ?, ?, 0, 'not_started')
+                                         translated_paragraphs, status, is_front_matter)
+                    VALUES (?, ?, ?, ?, 0, 'not_started', 0)
                     """,
                     (book_id, ch_idx, chapter_title, len(pairs)),
                 )
@@ -131,8 +131,8 @@ def insert_chapters_and_paragraphs(
                     """
                     INSERT OR IGNORE INTO paragraphs
                         (chapter_id, paragraph_index, source_text, translated_text,
-                         is_translated, is_reviewed, reviewed_at)
-                    VALUES (?, ?, ?, ?, 1, 1, ?)
+                         is_translated, is_skipped, is_reviewed, reviewed_at)
+                    VALUES (?, ?, ?, ?, 1, 0, 1, ?)
                     """,
                     (ch_id, para_idx, pair["jp"], pair["en"],
                      datetime.now(timezone.utc).isoformat()),
@@ -152,8 +152,8 @@ def insert_chapters_and_paragraphs(
                 conn.execute(
                     """
                     INSERT INTO chapters (book_id, chapter_index, title,
-                                         total_paragraphs, translated_paragraphs, status)
-                    VALUES (?, ?, ?, ?, 0, 'not_started')
+                                         total_paragraphs, translated_paragraphs, status, is_front_matter)
+                    VALUES (?, ?, ?, ?, 0, 'not_started', 0)
                     """,
                     (book_id, ch_idx, ch_data["title"][:512], len(ch_data["paragraphs"])),
                 )
@@ -168,8 +168,8 @@ def insert_chapters_and_paragraphs(
                     """
                     INSERT OR IGNORE INTO paragraphs
                         (chapter_id, paragraph_index, source_text, translated_text,
-                         is_translated, is_reviewed)
-                    VALUES (?, ?, ?, NULL, 0, 0)
+                         is_translated, is_skipped, is_reviewed)
+                    VALUES (?, ?, ?, NULL, 0, 0, 0)
                     """,
                     (ch_id, para_idx, para["raw"]),
                 )
@@ -317,6 +317,7 @@ def main() -> None:
     # Selbst-Test: RAG-Chunk-Zählung
     db_path = RAG_DIR / f"series_{series_id}.db"
     store = SeriesStore(db_path)
+    store.initialize()
     total_chunks = store.count()
     store.close()
     print(f"\nRAG-DB series_{series_id}.db: {total_chunks} Chunks total")

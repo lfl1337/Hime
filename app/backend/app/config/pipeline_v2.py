@@ -50,7 +50,7 @@ class _PipelineV2Settings(BaseSettings):
     )
 
     hime_stage1c_model_id: str = Field(default="Qwen/Qwen3.5-9B")
-    hime_stage1c_local_path: str = Field(default=str(MODELS_DIR / "qwen3-9b"))
+    hime_stage1c_local_path: str = Field(default=str(MODELS_DIR / "qwen3.5-9b"))
 
     # Stage 1D: LLM-jp-3-7.2B-Instruct3 (Japanese-native, NF4 4-bit)
     hime_stage1d_model_id: str = Field(default="llm-jp/llm-jp-3-7.2b-instruct3")

@@ -35,12 +35,12 @@ MODELS: list[dict] = [
         "local_dir": MODELS_DIR / "translategemma-27b",
     },
     {
-        "key": "qwen3-9b",
+        "key": "qwen3.5-9b",
         "hf_id": "Qwen/Qwen3.5-9B",
         "description": "Stage 1C — Diversitäts-Draft",
         "size_gb": 18,
         "method": "unsloth",
-        "local_dir": MODELS_DIR / "qwen3-9b",
+        "local_dir": MODELS_DIR / "qwen3.5-9b",
     },
     {
         "key": "qwen3-30b",

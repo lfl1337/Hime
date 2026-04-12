@@ -1,1 +1,1 @@
-{"patience_counter": 1, "patience_total": 5, "target_hit_count": 0, "target_confirmations": 3, "best_metric": 1.0683510303497314, "stop_reason": null}
+{"patience_counter": 0, "patience_total": 5, "target_hit_count": 0, "target_confirmations": 3, "best_metric": 0.9587215185165405, "stop_reason": null}

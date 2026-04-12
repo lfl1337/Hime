@@ -5,9 +5,9 @@ CONFIG = TrainingConfig(
     key="qwen35-9b",
     model="Qwen/Qwen3.5-9B",
     lora_dir="Qwen3.5-9B",
-    max_seq=4096,
-    batch_size=4,   # 9B 4-bit ~4.5 GB weights; batch=4 @ seq=4096 fits ~14 GB → safe on 32 GB
-    grad_accum=4,   # effective batch = 4×4 = 16 (double the 32B baseline of 1×8=8)
+    max_seq=2048,   # reduced from 4096 — halves activation VRAM; long seqs truncated
+    batch_size=1,   # reduced from 4 — eliminates activation stacking; matches 32B baseline
+    grad_accum=16,  # increased from 4 — keeps effective batch = 1×16 = 16
     trainer="unsloth",
     enable_thinking=False,
 )

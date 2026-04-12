@@ -128,7 +128,7 @@ def load_training_data() -> Dataset:
             tier_idx = len(tiers_cfg) - 1
         active_tier = tiers_cfg[tier_idx]
         min_score = float(active_tier["min_score"])
-        source_file = TRAINING_DIR / "jparacrawl_500k.jsonl"
+        source_file = TRAINING_DIR / "hime_training_all.jsonl"
         literary = [TRAINING_DIR / Path(p).name for p in cfg.get("literary_files", [])]
 
         print(f"[curriculum] tier={active_tier['name']} min_score={min_score}")

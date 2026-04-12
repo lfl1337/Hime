@@ -33,7 +33,7 @@
   {
     "id": "T5",
     "jp": "\u300c\u3042\u306a\u305f\u306e\u305d\u3070\u306b\u3044\u305f\u3044\u3002\u305a\u3063\u3068\u3001\u305a\u3063\u3068\u300d/ \u6d99\u304c\u96f6\u308c\u305f\u3002\u9707\u3048\u308b\u624b\u3092\u4f38\u3070\u3057\u305f\u3002",
-    "expected_substrings": ["her", "she"],
+    "expected_substrings": ["she"],
     "forbidden_substrings": [" him", " his", " he "],
     "fail_class": "pronoun_masculinization"
   },

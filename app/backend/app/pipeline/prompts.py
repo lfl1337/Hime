@@ -203,8 +203,8 @@ _POLISH_SYSTEM = _load_template("polish_stage3.txt", _POLISH_FALLBACK)
 _DRAFT_LABELS: dict[str, str] = {
     "qwen32b":        "Draft 1 — Qwen2.5-32B",
     "translategemma": "Draft 2 — TranslateGemma-12B",
-    "qwen35_9b":      "Draft 3 — Qwen3-9B",
-    "gemma4_e4b":     "Draft 4 — Gemma4 E4B",
+    "qwen35_9b":      "Draft 3 — Qwen3.5-9B",
+    "sarashina2":     "Draft 4 — Sarashina2-7B",  # replaces Gemma4 E4B
     "jmdict":         "Draft 5 — JMdict",
 }
 
@@ -265,4 +265,168 @@ def polish_messages(
     return [
         {"role": "system", "content": _POLISH_SYSTEM},
         {"role": "user",   "content": "\n\n".join(user_parts)},
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Per-model Stage 1 templates (Phase 3 — yuri-specific)
+# ---------------------------------------------------------------------------
+
+_QWEN32B_STAGE1_FALLBACK = """\
+You are translating a Japanese yuri light novel into natural literary English.
+Genre: yuri (female-female romance). Cast: predominantly female.
+Rules: default to female pronouns (she/her), use glossary names exactly,
+no hallucination, keep honorifics (-san, -chan, -senpai, -sama), literary register.
+
+{glossary}
+
+{character_list}
+
+{rag_context}
+
+Translate the following Japanese text. Output ONLY the translation."""
+
+_TRANSLATEGEMMA_STAGE1_FALLBACK = """\
+Translate the following Japanese text to English.
+Genre: yuri light novel.
+When the subject is unclear, use female pronouns (she/her).
+Keep honorifics as romaji (-san, -chan, -senpai, -sama, -kun).
+Translate only what is in the source — do not add content.
+
+{glossary}"""
+
+_SARASHINA2_STAGE1_FALLBACK = """\
+You are a professional Japanese-to-English translator specialized in literary fiction.
+Task: Translate the following Japanese text from a yuri light novel into natural English.
+Output MUST be English only.
+Rules: female pronouns when subject omitted, use glossary names, keep honorifics,
+no additions, no Japanese characters in output.
+
+{glossary}
+
+{character_list}
+
+Japanese source:"""
+
+_QWEN32B_STAGE1 = _load_template("qwen_25_32b_stage1.txt", _QWEN32B_STAGE1_FALLBACK)
+_TRANSLATEGEMMA_STAGE1 = _load_template(
+    "translategemma_12b_stage1.txt", _TRANSLATEGEMMA_STAGE1_FALLBACK
+)
+_QWEN35_9B_STAGE1 = _load_template("qwen_35_9b_stage1.txt", _QWEN32B_STAGE1_FALLBACK)
+_SARASHINA2_STAGE1 = _load_template("sarashina2_7b_stage1.txt", _SARASHINA2_STAGE1_FALLBACK)
+
+
+# ---------------------------------------------------------------------------
+# Helper functions (Phase 3)
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+
+def render_prompt(template: str, **kwargs: str) -> str:
+    """Render a prompt template, collapsing empty optional sections.
+
+    Supported placeholders: {glossary}, {character_list}, {rag_context},
+    {source_text}, and any other keyword args.
+    Collapses 3+ consecutive newlines to 2 so empty sections leave no orphaned headers.
+    """
+    defaults: dict[str, str] = {
+        "glossary": "",
+        "character_list": "",
+        "rag_context": "",
+        "source_text": "",
+    }
+    merged = {**defaults, **kwargs}
+    try:
+        rendered = template.format(**merged)
+    except KeyError as exc:
+        _log.warning("render_prompt: missing placeholder %s — using template as-is", exc)
+        rendered = template
+    return _re.sub(r"\n{3,}", "\n\n", rendered)
+
+
+def build_glossary_section(entries: list[dict]) -> str:
+    """Format a glossary list for prompt injection.
+
+    Args:
+        entries: list of {"jp": "千夏", "en": "Chinatsu", "note": "protagonist (female)"}
+
+    Returns empty string if entries is empty (caller gets no glossary header).
+    """
+    if not entries:
+        return ""
+    lines = ["Glossary (Japanese term → English reading):"]
+    for e in entries:
+        line = f"  {e['jp']} → {e['en']}"
+        if e.get("note"):
+            line += f"  ({e['note']})"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def build_character_list(characters: list[dict]) -> str:
+    """Format a character list for prompt injection.
+
+    Args:
+        characters: list of {"jp": "千夏", "en": "Chinatsu", "role": "protagonist (female)"}
+    """
+    if not characters:
+        return ""
+    lines = ["Known characters in this volume:"]
+    for c in characters:
+        lines.append(f"  {c['jp']} ({c['en']}) — {c.get('role', 'character')}")
+    return "\n".join(lines)
+
+
+def build_rag_context_section(rag_chunks: list[str]) -> str:
+    """Format RAG chunks for prompt injection.
+
+    Returns empty string if no chunks (caller gets no RAG header).
+    """
+    if not rag_chunks:
+        return ""
+    return "Relevant context from previous volumes:\n" + "\n---\n".join(rag_chunks)
+
+
+def stage1_messages_for_model(
+    model_key: str,
+    source_text: str,
+    glossary_entries: list[dict] | None = None,
+    characters: list[dict] | None = None,
+    rag_chunks: list[str] | None = None,
+) -> list[dict[str, str]]:
+    """Build Stage 1 messages for a specific model using its yuri-specific template.
+
+    Args:
+        model_key: one of 'qwen32b', 'translategemma', 'qwen35_9b', 'sarashina2'.
+                   Falls back to generic stage1_messages() for unknown keys.
+        source_text: The Japanese text to translate.
+        glossary_entries: Optional list of {"jp", "en", "note"} dicts.
+        characters: Optional list of {"jp", "en", "role"} dicts.
+        rag_chunks: Optional list of RAG context strings.
+    """
+    template_map = {
+        "qwen32b":        _QWEN32B_STAGE1,
+        "translategemma": _TRANSLATEGEMMA_STAGE1,
+        "qwen35_9b":      _QWEN35_9B_STAGE1,
+        "sarashina2":     _SARASHINA2_STAGE1,
+    }
+    template = template_map.get(model_key)
+    if template is None:
+        _log.warning("stage1_messages_for_model: unknown model_key %r, using generic", model_key)
+        return stage1_messages(source_text)
+
+    glossary = build_glossary_section(glossary_entries or [])
+    char_list = build_character_list(characters or [])
+    rag = build_rag_context_section(rag_chunks or [])
+
+    system = render_prompt(
+        template,
+        glossary=glossary,
+        character_list=char_list,
+        rag_context=rag,
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user",   "content": source_text},
     ]

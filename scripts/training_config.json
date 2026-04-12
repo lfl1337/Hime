@@ -9,7 +9,7 @@
   "min_steps": 1000,
   "max_epochs": 3,
   "curriculum": {
-    "enabled": true,
+    "enabled": false,
     "tiers": [
       {
         "name": "strict",

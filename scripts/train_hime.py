@@ -151,8 +151,11 @@ def load_training_data() -> Dataset:
         print(f"[curriculum] formatted={len(formatted):,} | Train: {len(train_data):,} | Eval: {len(eval_data):,}")
         return Dataset.from_list(train_data), Dataset.from_list(eval_data)
 
-    # ----- Legacy path (unchanged) -----
-    data_file = TRAINING_DIR / "hime_training_all.jsonl"
+    # ----- Legacy path -----
+    # Loads hime_training_filtered.jsonl (104,866 pre-scored JParaCrawl pairs, score ≥ 0.70).
+    # CurriculumDataLoader bypassed for all models until literary files are Bertalign-aligned.
+    # See scripts/cleanup_candidates.md for what to restore once that's done.
+    data_file = TRAINING_DIR / "hime_training_filtered.jsonl"
 
     if not data_file.exists():
         raise FileNotFoundError(f"Trainingsdaten nicht gefunden: {data_file}")
@@ -662,7 +665,7 @@ if __name__ == "__main__":
 
     # Apply path overrides to module-level globals before main() runs
     LORA_OUTPUT = _args.output_dir or str(Path(_args.model_dir) / "lora" / ADAPTER_NAME)
-    DATA_PATH   = str(Path(_args.training_data) / "hime_training_all.jsonl")
+    DATA_PATH   = str(Path(_args.training_data) / "hime_training_filtered.jsonl")
     # Patch globals so load_training_data() and train() pick them up
     _mod = sys.modules[__name__]
     _mod.OUTPUT_DIR   = Path(LORA_OUTPUT)

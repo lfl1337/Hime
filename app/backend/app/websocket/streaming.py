@@ -4,8 +4,15 @@ WebSocket endpoints for live token streaming.
 Legacy single-model endpoint (backward compat):
     ws://127.0.0.1:8000/ws/translate
 
+    W5: Backend-only — no active frontend caller as of v1.1.2. Kept for backward
+    compatibility with older Tauri builds. New code should use the Pipeline v2
+    WebSocket at /api/v1/pipeline/{book_id}/translate instead.
+
 New multi-stage pipeline endpoint:
     ws://127.0.0.1:8000/ws/translate/{job_id}
+
+    W5: Used by the legacy /translations/translate job flow. No active frontend
+    caller as of v1.1.2 (superseded by Pipeline v2 WS). Planned for removal.
 
 Close codes:
     4004 — Job not found
@@ -141,9 +148,11 @@ async def ws_translate_pipeline(
 
             source_content = source.content
             notes = job_row.notes or ""
+            # v1.2.1: resolve book_id for glossary/RAG enrichment if available
+            book_id: int | None = getattr(source, "book_id", None)
 
         task = asyncio.create_task(
-            run_pipeline(job_id, source_content, notes, ws_queue)
+            run_pipeline(job_id, source_content, notes, ws_queue, book_id=book_id)
         )
         _active_pipelines[job_id] = task
     else:

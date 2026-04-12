@@ -1,0 +1,10 @@
+view: 01_root
+url: http://127.0.0.1:23421/
+captured_at: 04:41:56
+message_count: 1
+error_count: 0
+warning_count: 0
+
+--- messages ---
+[1] [04:41:56] [DEBUG] (http://127.0.0.1:23421/src/api/client.ts:77:10)
+[client] baseUrl = http://127.0.0.1:23421 (dev/proxy mode)

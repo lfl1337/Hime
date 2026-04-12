@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getParagraphs, saveTranslation, exportChapter } from '@/api/epub'
+import { getParagraphs, saveTranslation, exportChapter, updateBookSeries } from '@/api/epub'
 import { createSourceText, startTranslation } from '@/api/translate'
 import { usePipeline } from '@/api/websocket'
 import { useStore } from '@/store'
@@ -7,6 +7,11 @@ import type { BookSummary, ChapterSummary, ParagraphInfo } from '@/api/epub'
 import { PipelineProgress } from '@/components/PipelineProgress'
 import { Stage1Panel } from '@/components/Stage1Panel'
 import { ParagraphNavigator } from './ParagraphNavigator'
+import { ModelStatusDashboard } from '@/components/ModelStatusDashboard'
+import { PipelineExplanation } from '@/components/PipelineExplanation'
+import { ReaderPanelView } from '@/components/ReaderPanelView'
+import { BookDetails } from '@/components/BookDetails'
+import { BookPipelinePanel } from '@/components/BookPipelinePanel'
 
 interface Props {
   book: BookSummary | null
@@ -176,6 +181,7 @@ export function TranslationWorkspace({ book, chapter }: Props) {
             →
           </button>
         </div>
+        <ModelStatusDashboard compact />
         {/* Mini progress */}
         <div className="w-24 bg-zinc-800 rounded-full h-1.5 shrink-0">
           <div
@@ -219,6 +225,8 @@ export function TranslationWorkspace({ book, chapter }: Props) {
             {pipeline.stage !== 'idle' && (
               <PipelineProgress currentStage={pipeline.stage} />
             )}
+
+            <PipelineExplanation />
 
             {/* Stage 1 streaming detail */}
             <Stage1Panel
@@ -272,6 +280,14 @@ export function TranslationWorkspace({ book, chapter }: Props) {
                   </p>
                 )}
               </div>
+            )}
+
+            {/* Reader Panel */}
+            {(pipeline.finalOutput || currentParagraph?.translated_text) && (
+              <ReaderPanelView
+                translation={pipeline.finalOutput || currentParagraph?.translated_text || ''}
+                source={currentParagraph?.source_text ?? null}
+              />
             )}
 
             {/* Error */}
@@ -357,6 +373,26 @@ export function TranslationWorkspace({ book, chapter }: Props) {
             )}
           </div>
         </div>
+        {book && (
+          <div className="flex flex-col overflow-y-auto shrink-0">
+            <BookDetails
+              book_id={book.id}
+              series_id={book.series_id ?? null}
+              series_title={book.series_title ?? null}
+              onSeriesChange={async (id, title) => {
+                if (!book) return
+                try {
+                  await updateBookSeries(book.id, id, title)
+                } catch (e) {
+                  console.error('Failed to save series:', e)
+                }
+              }}
+              sample_source={currentParagraph?.source_text}
+              sample_translation={currentParagraph?.translated_text ?? undefined}
+            />
+            <BookPipelinePanel book={book} />
+          </div>
+        )}
       </div>
     </div>
   )

@@ -8,6 +8,7 @@ import { connectionRegistry } from '@/utils/connectionRegistry'
 import type { Connection } from '@/utils/connectionRegistry'
 import { getEpubSettings, updateEpubSetting } from '@/api/epub'
 import { getHealthInfo } from '@/api/client'
+import { ModelStatusDashboard } from '@/components/ModelStatusDashboard'
 
 // ---------------------------------------------------------------------------
 // Open URL
@@ -383,6 +384,13 @@ export function Settings() {
         />
       </Section>
 
+      {/* ── Pipeline Models ──────────────────────────────────────────── */}
+      <Section title="Pipeline Models">
+        <div className="px-4 py-3">
+          <ModelStatusDashboard />
+        </div>
+      </Section>
+
       {/* ── Memory & Performance ───────────────────────────────────────── */}
       <Section title="Memory & Performance">
         {/* Frontend Memory */}
@@ -531,7 +539,7 @@ export function Settings() {
         <div className="px-4 py-4 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-zinc-300 font-semibold">Hime</span>
-            <span className="text-sm text-zinc-500 font-mono">v0.7.2</span>
+            <span className="text-sm text-zinc-500 font-mono">v2.0.0</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-zinc-300">Backend</span>

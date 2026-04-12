@@ -1,0 +1,60 @@
+Hime — Pre-Migration Baseline
+==============================
+Captured: 2026-04-08
+Worktree: C:\Projekte\Hime (main)
+Main HEAD: 8a3214f
+Command: conda run -n hime python scripts/verify_migration.py
+Env: no HIME_* variables set (defaults active)
+
+=== Hime migration verification ===
+
+  [WARN] env:HIME_PROJECT_ROOT                              (unset - using default)
+  [WARN] env:HIME_DATA_DIR                                  (unset - using default)
+  [WARN] env:HIME_MODELS_DIR                                (unset - using default)
+  [WARN] env:HIME_LOGS_DIR                                  (unset - using default)
+  [WARN] env:HIME_EPUB_WATCH_DIR                            (unset - using default)
+  [WARN] env:HIME_TRAINING_DATA_DIR                         (unset - using default)
+  [WARN] env:HIME_SCRIPTS_DIR                               (unset - using default)
+  [WARN] env:HIME_EMBEDDINGS_DIR                            (unset - using default)
+  [WARN] env:HIME_RAG_DIR                                   (unset - using default)
+  [OK  ] import:app.core.paths                              C:\Projekte\Hime
+  [OK  ] path:PROJECT_ROOT                                  C:\Projekte\Hime
+  [OK  ] path:DATA_DIR                                      C:\Projekte\Hime\data
+  [OK  ] path:MODELS_DIR                                    C:\Projekte\Hime\modelle
+  [OK  ] path:LOGS_DIR                                      C:\Projekte\Hime\app\backend\logs
+  [OK  ] path:EPUB_WATCH_DIR                                C:\Projekte\Hime\data\epubs
+  [OK  ] path:TRAINING_DATA_DIR                             C:\Projekte\Hime\data\training
+  [OK  ] path:SCRIPTS_DIR                                   C:\Projekte\Hime\scripts
+  [WARN] path:EMBEDDINGS_DIR                                C:\Projekte\Hime\modelle\embeddings (missing - will be created on first use)
+  [WARN] path:RAG_DIR                                       C:\Projekte\Hime\data\rag (missing - will be created on first use)
+  [OK  ] training_config.json                               9 top-level keys
+  [OK  ] scripts hardcoded paths                            none found
+  [OK  ] lib.rs hardcoded path                              removed
+  [OK  ] train_with_resume.py --dry-run                     exit 0
+
+Total: 23 checks, 0 failures
+
+=== Notes ===
+
+- All 9 env vars report WARN because they are not set in the system environment.
+  This is the pre-migration "happy path" — paths.py falls back to defaults relative
+  to PROJECT_ROOT detected from the file location. After migration, these MUST be
+  set on the new disk.
+
+- EMBEDDINGS_DIR and RAG_DIR report WARN because the directories don't exist yet.
+  This is expected — the bge-m3 download (gated behind HIME_ALLOW_DOWNLOADS) and
+  the per-series RAG sqlite stores will create them on first use. Not a failure.
+
+- All 7 hard path checks (PROJECT_ROOT through SCRIPTS_DIR) pass — the project
+  filesystem layout is intact.
+
+- training_config.json parses cleanly with 9 top-level keys.
+
+- No hardcoded "C:\Projekte\Hime" or "C:/Projekte/Hime" literals remain in any
+  script or in lib.rs (verified by grep with comment-stripping).
+
+- train_with_resume.py --dry-run exits 0 — the auto-resume wrapper is healthy.
+
+This baseline is the target for post-migration verification: 14 OK + 9 WARN
+(env vars only) + 0 FAIL with HIME_* env vars unset, OR 16 OK + 7 WARN + 0 FAIL
+with HIME_* env vars set on the new disk.

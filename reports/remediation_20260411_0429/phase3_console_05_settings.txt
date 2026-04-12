@@ -1,0 +1,13 @@
+view: 05_settings
+url: http://127.0.0.1:23421/settings
+app_error_count: 0
+app_warning_count: 0
+extension_warning_count: 0
+notes: |
+  Zero errors/warnings. Settings view renders fully: Appearance (Theme Dark
+  selected), Training Defaults, Paths section (EPUB Watch Folder, Models Base
+  Path, LoRA Path, Training Log Path, Scripts Path), Pipeline Models section,
+  and Memory & Performance block with a live JS heap reading (15/17 MB).
+
+--- messages ---
+(none)

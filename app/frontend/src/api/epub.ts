@@ -12,6 +12,8 @@ export interface BookSummary {
   total_paragraphs: number
   translated_paragraphs: number
   status: 'not_started' | 'in_progress' | 'complete'
+  series_id: number | null
+  series_title: string | null
 }
 
 export interface ChapterSummary {
@@ -81,6 +83,19 @@ export async function exportChapter(chapterId: number, format: 'txt' = 'txt'): P
 export async function rescanBookChapters(bookId: number): Promise<BookSummary> {
   const res = await apiFetch(`/api/v1/epub/books/${bookId}/rescan`, { method: 'POST' })
   if (!res.ok) throw new Error(`Rescan failed: ${res.status}`)
+  return res.json() as Promise<BookSummary>
+}
+
+export async function updateBookSeries(
+  bookId: number,
+  seriesId: number | null,
+  seriesTitle: string | null,
+): Promise<BookSummary> {
+  const res = await apiFetch(`/api/v1/epub/books/${bookId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ series_id: seriesId, series_title: seriesTitle }),
+  })
+  if (!res.ok) throw new Error(`Failed to update book series: ${res.status}`)
   return res.json() as Promise<BookSummary>
 }
 

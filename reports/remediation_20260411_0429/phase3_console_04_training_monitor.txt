@@ -1,0 +1,13 @@
+view: 04_training_monitor
+url: http://127.0.0.1:23421/monitor
+app_error_count: 0
+app_warning_count: 0
+extension_warning_count: 0
+notes: |
+  Zero errors/warnings. TrainingMonitor view fully renders: hardware panel
+  (VRAM/GPU/TEMP/POWER/RAM/CPU placeholders), training controls with
+  "Resume from checkpoint" option, real checkpoint list populated from
+  modelle/lora/Qwen2.5-32B-Instruct/ (checkpoint-20, 40, 50, 60, ...).
+
+--- messages ---
+(none)

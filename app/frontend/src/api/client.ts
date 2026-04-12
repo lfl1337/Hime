@@ -8,6 +8,20 @@
 //   getPort() reads hime-backend.lock from %APPDATA%\dev.Ninym.hime\ via
 //   appDataDir() + readTextFile(), matching where run.py writes it.
 
+/**
+ * The Hime backend binds to a port in the range 18420–18430. The first
+ * available port is recorded in `app_data_dir/hime-backend.lock` (release)
+ * or `app/backend/hime-backend.lock` (dev). The discovery chain is:
+ *   1. Read the lock file via Tauri fs plugin
+ *   2. Probe ports 18420–18430 sequentially
+ *   3. Fall back to the default below
+ *
+ * In dev mode the Vite proxy bypasses all of this. The constant is here so
+ * a disk-migrated install can override it via a build flag if needed.
+ */
+const DEFAULT_BACKEND_PORT = 18420
+const DEFAULT_BACKEND_HOST = '127.0.0.1'
+
 let cachedPort: number | null = null
 
 async function tryReadFile(filePath: string): Promise<string | null> {
@@ -24,7 +38,7 @@ async function tryReadFile(filePath: string): Promise<string | null> {
 
 async function probePort(port: number): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+    const res = await fetch(`http://${DEFAULT_BACKEND_HOST}:${port}/health`, {
       signal: AbortSignal.timeout(500),
     })
     return res.ok
@@ -67,8 +81,8 @@ async function getPort(): Promise<number> {
   }
 
   console.error('[client] No backend found on 18420–18430 — defaulting to 18420')
-  cachedPort = 18420
-  return 18420
+  cachedPort = DEFAULT_BACKEND_PORT
+  return DEFAULT_BACKEND_PORT
 }
 
 export async function getBaseUrl(): Promise<string> {
@@ -80,12 +94,12 @@ export async function getBaseUrl(): Promise<string> {
   // Production Tauri: discover the real backend port directly
   try {
     const port = await getPort()
-    const url = `http://127.0.0.1:${port}`
+    const url = `http://${DEFAULT_BACKEND_HOST}:${port}`
     console.debug(`[client] baseUrl = ${url} (prod/direct mode)`)
     return url
   } catch (err) {
     console.error('[client] getBaseUrl() threw:', err)
-    return 'http://127.0.0.1:18420'
+    return `http://${DEFAULT_BACKEND_HOST}:${DEFAULT_BACKEND_PORT}`
   }
 }
 
@@ -104,7 +118,16 @@ export async function createWebSocket(jobId: number): Promise<WebSocket> {
     return new WebSocket(`${wsOrigin}/ws/translate/${jobId}`)
   }
   const port = await getPort()
-  return new WebSocket(`ws://127.0.0.1:${port}/ws/translate/${jobId}`)
+  return new WebSocket(`ws://${DEFAULT_BACKEND_HOST}:${port}/ws/translate/${jobId}`)
+}
+
+export async function createBookPipelineWebSocket(bookId: number): Promise<WebSocket> {
+  if (import.meta.env.DEV) {
+    const wsOrigin = window.location.origin.replace(/^http/, 'ws')
+    return new WebSocket(`${wsOrigin}/api/v1/pipeline/${bookId}/translate`)
+  }
+  const port = await getPort()
+  return new WebSocket(`ws://${DEFAULT_BACKEND_HOST}:${port}/api/v1/pipeline/${bookId}/translate`)
 }
 
 export async function getHealthInfo(): Promise<{ status: string; app: string; version: string }> {

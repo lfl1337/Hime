@@ -1,5 +1,7 @@
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -7,6 +9,24 @@ from .config import settings
 
 engine = create_async_engine(settings.db_url, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_fks(dbapi_connection, connection_record):
+    """Enable SQLite foreign key constraints on every new connection.
+
+    SQLite disables FKs by default; this listener flips them on for every
+    low-level DBAPI connection (including aiosqlite), and the PRAGMA persists
+    for the lifetime of that connection.
+
+    Guard: only runs for SQLite connections — avoids a syntax error if the
+    engine is ever pointed at PostgreSQL or another dialect.
+    """
+    if "sqlite" not in type(dbapi_connection).__module__:
+        return
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON")
+    cursor.close()
 
 
 class Base(DeclarativeBase):
@@ -22,6 +42,30 @@ _PIPELINE_COLS = [
     ("final_output",           "TEXT"),
     ("pipeline_duration_ms",   "INTEGER"),
     ("current_stage",          "TEXT"),
+]
+
+_V121_PARAGRAPH_COLS = [
+    ("verification_result", "TEXT"),
+    ("is_reviewed",         "BOOLEAN DEFAULT 0"),
+    ("reviewed_at",         "TIMESTAMP"),
+    ("reviewer_notes",      "TEXT"),
+]
+
+_V121_BOOK_COLS = [
+    ("series_id",    "INTEGER"),
+    ("series_title", "TEXT"),
+]
+
+_V121_TRANSLATION_COLS = [
+    ("confidence_log", "TEXT"),
+]
+
+_V200_PARAGRAPH_RETRY_COLS = [
+    ("retry_count_fix_pass",      "INTEGER NOT NULL DEFAULT 0"),
+    ("retry_count_full_pipeline", "INTEGER NOT NULL DEFAULT 0"),
+    ("retry_flag",                "BOOLEAN NOT NULL DEFAULT 0"),
+    ("aggregator_verdict",        "TEXT"),
+    ("aggregator_instruction",    "TEXT"),
 ]
 
 
@@ -47,6 +91,64 @@ async def init_db() -> None:
         existing_ch = {r[1] for r in rows_ch}
         if "is_front_matter" not in existing_ch:
             await conn.execute(text("ALTER TABLE chapters ADD COLUMN is_front_matter BOOLEAN DEFAULT 0"))
+
+        # v1.2.1: paragraph columns
+        rows_par = (await conn.execute(text("PRAGMA table_info(paragraphs)"))).fetchall()
+        existing_par = {r[1] for r in rows_par}
+        for col, dtype in _V121_PARAGRAPH_COLS:
+            if col not in existing_par:
+                await conn.execute(text(f"ALTER TABLE paragraphs ADD COLUMN {col} {dtype}"))
+
+        # v2.0.0: paragraph retry-tracking columns (Stage 4 two-path retry)
+        rows_par2 = (await conn.execute(text("PRAGMA table_info(paragraphs)"))).fetchall()
+        existing_par2 = {r[1] for r in rows_par2}
+        for col, dtype in _V200_PARAGRAPH_RETRY_COLS:
+            if col not in existing_par2:
+                await conn.execute(text(f"ALTER TABLE paragraphs ADD COLUMN {col} {dtype}"))
+
+        # v1.2.1: book columns (series tracking)
+        rows_book = (await conn.execute(text("PRAGMA table_info(books)"))).fetchall()
+        existing_book = {r[1] for r in rows_book}
+        for col, dtype in _V121_BOOK_COLS:
+            if col not in existing_book:
+                await conn.execute(text(f"ALTER TABLE books ADD COLUMN {col} {dtype}"))
+
+        # v1.2.1: translation columns (confidence_log)
+        rows_tr = (await conn.execute(text("PRAGMA table_info(translations)"))).fetchall()
+        existing_tr = {r[1] for r in rows_tr}
+        for col, dtype in _V121_TRANSLATION_COLS:
+            if col not in existing_tr:
+                await conn.execute(text(f"ALTER TABLE translations ADD COLUMN {col} {dtype}"))
+
+        # v1.2.1: glossary tables
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS glossaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id INTEGER REFERENCES books(id),
+                series_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS glossary_terms (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                glossary_id INTEGER NOT NULL REFERENCES glossaries(id),
+                source_term TEXT NOT NULL,
+                target_term TEXT NOT NULL,
+                category TEXT,
+                notes TEXT,
+                occurrences INTEGER DEFAULT 0,
+                is_locked BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_glossary_terms_glossary ON glossary_terms(glossary_id)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_glossary_terms_source ON glossary_terms(source_term)"
+        ))
 
         # Create hardware_stats table if missing
         await conn.execute(text("""

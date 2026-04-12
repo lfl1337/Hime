@@ -34,6 +34,7 @@ async def list_texts(
     limit: int = 50,
     session: AsyncSession = Depends(get_session),
 ) -> list[SourceText]:
+    # W5: Backend-only/CLI — no frontend caller as of v1.1.2
     result = await session.execute(
         select(SourceText)
         .order_by(SourceText.created_at.desc())
@@ -59,6 +60,7 @@ async def delete_text(
     text_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> None:
+    # W5: Backend-only/CLI — no frontend caller as of v1.1.2
     text = await session.get(SourceText, text_id)
     if not text:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Text not found")

@@ -1,0 +1,13 @@
+view: 05_training_monitor
+url: http://127.0.0.1:23421/monitor
+captured_at: 04:43:30
+message_count: 0
+error_count: 0
+warning_count: 0
+notes: |
+  No errors or warnings in console. All /api/v1/* calls returned 200 (47 requests observed).
+  The live loss-history stream (SSE) is active for the prior Qwen2.5-32B-Instruct run at
+  checkpoint-620. Hardware polling every ~10s.
+
+--- messages ---
+(none)

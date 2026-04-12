@@ -90,7 +90,11 @@ _create_job_object()
 
 # Maps model_key → canonical LoRA output directory name (must match frontend MODEL_TO_LORA_DIR)
 MODEL_KEY_TO_RUN_NAME: dict[str, str] = {
-    'qwen32b':  'Qwen2.5-32B-Instruct',
+    # v2 LoRA-trained models (Stage 1)
+    'qwen32b':           'Qwen2.5-32B-Instruct',
+    'translategemma12b': 'translategemma-12b',
+    'qwen35-9b':         'Qwen3.5-9B',
+    # v1 backward-compat
     'qwen14b':  'Qwen2.5-14B-Instruct',
     'qwen72b':  'Qwen2.5-72B-Instruct',
     'gemma27b': 'Gemma-3-27B-IT',
@@ -173,7 +177,7 @@ def start_training(
             "python", str(script),
             "--model", model_key,
             "--run-name", model_name,
-            "--epochs", str(epochs),
+            "--epochs", str(int(epochs)),
             "--log-file", log,
         ]
         if resume_checkpoint:
@@ -230,6 +234,10 @@ def start_training(
                 val = int(_cfg["max_epochs"])
                 if val > 0:
                     cmd += ["--max-epochs", str(val)]
+            if _cfg.get("max_steps") is not None:
+                val = int(_cfg["max_steps"])
+                if val > 0:
+                    cmd += ["--max-steps", str(val)]
         except Exception:
             pass  # never crash training start on config read failure
 

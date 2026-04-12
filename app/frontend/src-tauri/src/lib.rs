@@ -261,9 +261,23 @@ pub fn run() {
             let runtime_port_path = app_data_dir.join("hime-backend.lock");
 
             #[cfg(debug_assertions)]
-            let runtime_port_path = std::path::PathBuf::from(
-                r"C:\Projekte\Hime\app\backend\hime-backend.lock",
-            );
+            let runtime_port_path = {
+                // Resolve from HIME_PROJECT_ROOT or fall back to a path relative to the binary.
+                // Dev builds run from cargo's target dir; the backend writes the lock file
+                // into app/backend/ relative to the source tree.
+                let project_root = std::env::var("HIME_PROJECT_ROOT")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| {
+                        std::env::current_exe()
+                            .ok()
+                            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                            .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    });
+                project_root
+                    .join("app")
+                    .join("backend")
+                    .join("hime-backend.lock")
+            };
 
             let log_path_for_check = log_path_str.clone();
 

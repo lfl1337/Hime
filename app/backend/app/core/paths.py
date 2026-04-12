@@ -13,6 +13,8 @@ Environment variables (set in .env or system environment):
   HIME_EPUB_WATCH_DIR   — EPUB watch directory (default: DATA_DIR/epubs)
   HIME_TRAINING_DATA_DIR — training data (default: DATA_DIR/training)
   HIME_SCRIPTS_DIR      — scripts directory (default: PROJECT_ROOT/scripts)
+  HIME_EMBEDDINGS_DIR   — embedding model dir (default: MODELS_DIR/embeddings)
+  HIME_RAG_DIR          — per-series RAG db dir (default: DATA_DIR/rag)
 """
 import os
 from pathlib import Path
@@ -27,6 +29,9 @@ LOGS_DIR = Path(os.environ.get("HIME_LOGS_DIR", str(PROJECT_ROOT / "app" / "back
 EPUB_WATCH_DIR = Path(os.environ.get("HIME_EPUB_WATCH_DIR", str(DATA_DIR / "epubs")))
 TRAINING_DATA_DIR = Path(os.environ.get("HIME_TRAINING_DATA_DIR", str(DATA_DIR / "training")))
 SCRIPTS_DIR = Path(os.environ.get("HIME_SCRIPTS_DIR", str(PROJECT_ROOT / "scripts")))
+EMBEDDINGS_DIR = Path(os.environ.get("HIME_EMBEDDINGS_DIR", str(MODELS_DIR / "embeddings")))
+RAG_DIR = Path(os.environ.get("HIME_RAG_DIR", str(DATA_DIR / "rag")))
+OBSIDIAN_VAULT_DIR = Path(os.environ.get("HIME_OBSIDIAN_VAULT_DIR", str(PROJECT_ROOT / "obsidian-vault")))
 TRAINING_LOG_DIR = LOGS_DIR / "training"
 
 

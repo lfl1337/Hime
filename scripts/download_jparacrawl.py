@@ -11,7 +11,7 @@ from tqdm import tqdm
 import pandas as pd
 
 # ── Konfiguration ─────────────────────────────────────────────
-PROJECT_ROOT = Path(r"C:\Projekte\Hime")
+PROJECT_ROOT = Path(os.environ.get("HIME_PROJECT_ROOT") or Path(__file__).resolve().parent.parent)
 RAW_DIR      = PROJECT_ROOT / "data" / "raw_jparacrawl"
 ALIGNED_DIR  = PROJECT_ROOT / "data" / "aligned"
 TRAINING_DIR = PROJECT_ROOT / "data" / "training"

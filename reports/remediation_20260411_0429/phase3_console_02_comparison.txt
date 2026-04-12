@@ -1,0 +1,12 @@
+view: 02_comparison
+url: http://127.0.0.1:23421/comparison
+error_count: 0
+warning_count: 0
+notes: |
+  Zero errors/warnings after navigation. Comparison view renders: sidebar
+  (Translator / Comparison / Editor / Monitor / Settings), backend status
+  badge "Backend Online", "比較する" action, and three model panels (all
+  showing Offline — expected, no llama.cpp on test stack).
+
+--- messages ---
+(none)

@@ -79,8 +79,8 @@ async def test_dry_run_stage1_drafts_shape():
     assert hasattr(drafts, "qwen32b")
     assert hasattr(drafts, "translategemma12b")
     assert hasattr(drafts, "qwen35_9b")
-    assert hasattr(drafts, "gemma4_e4b")
+    assert hasattr(drafts, "llm_jp")
     assert hasattr(drafts, "jmdict")
-    for name in ("qwen32b", "translategemma12b", "qwen35_9b", "gemma4_e4b"):
+    for name in ("qwen32b", "translategemma12b", "qwen35_9b", "llm_jp"):
         val = getattr(drafts, name)
         assert "[DRY-RUN" in val, f"{name} should contain DRY-RUN marker"

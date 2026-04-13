@@ -85,6 +85,17 @@ desktop.ini
 # ─── Claude Code local settings (machine-specific) ───────────────────────────
 .claude/
 
+# ─── Internal dev / CC session docs (not for public consumption) ─────────────
+prompts/
+reports/
+docs/superpowers/
+V121_HANDOFF.md
+
+# ─── Hime Vault RAG content (auto-generated on first run, rebuilt from EPUBs) ─
+Hime-vault/series_*/
+Hime-vault/00-Inbox/
+Hime-vault/_index.md
+
 # ─── Test / lint caches ──────────────────────────────────────────────────────
 .coverage
 htmlcov/

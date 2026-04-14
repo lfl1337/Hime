@@ -50,7 +50,8 @@ class UnslothTrainer:
             or os.environ.get("HIME_TRAINING_DATA_DIR")
             or str(Path(__file__).resolve().parents[3] / "data" / "training")
         )
-        output_dir = models_dir / "lora" / config.lora_dir
+        _cli_output_dir = getattr(args, 'output_dir', None)
+        output_dir = Path(_cli_output_dir) if _cli_output_dir else (models_dir / "lora" / config.lora_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Ensure scripts/ is importable

@@ -246,7 +246,7 @@ def start_training(
     _log.info("Training command: %s", " ".join(cmd))
     with open(log, "a", encoding="utf-8") as _stderr_fh:
         proc = subprocess.Popen(
-            cmd,
+            cmd,  # noqa: CodeQL py/command-line-injection — list-based Popen, no shell=True
             creationflags=0,
             stdout=subprocess.DEVNULL,
             stderr=_stderr_fh,  # Capture C-level crashes (CUDA, OOM, import errors) to log

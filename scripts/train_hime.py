@@ -609,33 +609,7 @@ def main(resume_from_checkpoint=None, stop_config=None, warm_start=True, from_be
 
 
 if __name__ == "__main__":
-    class TeeOutput:
-        def __init__(self, original, log_file):
-            self.original = original
-            self.log_file = log_file
-            self._buffer = ""
-
-        def _timestamp(self) -> str:
-            from datetime import datetime
-            return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-
-        def write(self, text):
-            self.original.write(text)
-            self._buffer += text
-            while "\n" in self._buffer:
-                line, self._buffer = self._buffer.split("\n", 1)
-                if line.strip():
-                    self.log_file.write(f"{self._timestamp()} {line}\n")
-                    self.log_file.flush()
-
-        def flush(self):
-            self.original.flush()
-            if self._buffer.strip():
-                self.log_file.write(f"{self._timestamp()} {self._buffer}\n")
-                self.log_file.flush()
-                self._buffer = ""
-
-        def isatty(self): return False
+    from tee_output import TeeOutput
 
     _parser = argparse.ArgumentParser(add_help=False)
     _parser.add_argument("--log-file", default=None)

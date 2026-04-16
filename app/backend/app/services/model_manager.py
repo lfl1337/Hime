@@ -3,6 +3,18 @@ Model endpoint manager — health checks and configuration for all pipeline mode
 
 Reads model URLs from app.config.settings (which reads from .env).
 Provides async health checks for individual models and batch status.
+
+DEPRECATED (v2 pipeline): The v2 pipeline loads all models locally via
+Unsloth/Transformers — there are no running HTTP inference servers to ping.
+The PIPELINE_MODELS list below reflects the v1 server layout (llama.cpp,
+ports 8001–8005) and is no longer accurate. The /models health-check endpoint
+(routers/models.py) will return false-negative "offline" results for all
+models while the v2 pipeline is in use.
+
+Do NOT delete this module: routers/models.py and tests/test_model_manager.py
+still import from it. When a v2 model-status endpoint is implemented
+(tracking Unsloth process state instead of HTTP servers), this module should
+be rewritten at that time.
 """
 import asyncio
 import logging

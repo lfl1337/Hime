@@ -1,4 +1,12 @@
-"""Inference server health check endpoint."""
+"""
+Inference server health check endpoint.
+
+DEPRECATED (v2 pipeline): This router calls model_manager.check_all_models(),
+which pings HTTP inference servers (llama.cpp, ports 8001–8005). The v2
+pipeline uses local Unsloth/Transformers models — no such servers run.
+All models will appear offline until this router is rewritten for v2.
+See services/model_manager.py for full deprecation context.
+"""
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 

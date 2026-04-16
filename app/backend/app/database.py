@@ -92,18 +92,11 @@ async def init_db() -> None:
         if "is_front_matter" not in existing_ch:
             await conn.execute(text("ALTER TABLE chapters ADD COLUMN is_front_matter BOOLEAN DEFAULT 0"))
 
-        # v1.2.1: paragraph columns
+        # v1.2.1 + v2.0.0: paragraph columns
         rows_par = (await conn.execute(text("PRAGMA table_info(paragraphs)"))).fetchall()
         existing_par = {r[1] for r in rows_par}
-        for col, dtype in _V121_PARAGRAPH_COLS:
+        for col, dtype in _V121_PARAGRAPH_COLS + _V200_PARAGRAPH_RETRY_COLS:
             if col not in existing_par:
-                await conn.execute(text(f"ALTER TABLE paragraphs ADD COLUMN {col} {dtype}"))
-
-        # v2.0.0: paragraph retry-tracking columns (Stage 4 two-path retry)
-        rows_par2 = (await conn.execute(text("PRAGMA table_info(paragraphs)"))).fetchall()
-        existing_par2 = {r[1] for r in rows_par2}
-        for col, dtype in _V200_PARAGRAPH_RETRY_COLS:
-            if col not in existing_par2:
                 await conn.execute(text(f"ALTER TABLE paragraphs ADD COLUMN {col} {dtype}"))
 
         # v1.2.1: book columns (series tracking)
@@ -205,11 +198,14 @@ async def init_db() -> None:
         # Seed default settings (INSERT OR IGNORE preserves user changes)
         from .core.paths import EPUB_WATCH_DIR
         _epub_default = str(EPUB_WATCH_DIR).replace("\\", "/")
-        await conn.execute(text(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES "
-            f"('epub_watch_folder', '{_epub_default}'), "
-            "('auto_scan_interval', '60')"
-        ))
+        await conn.execute(
+            text(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES "
+                "(:k1, :v1), (:k2, :v2)"
+            ),
+            {"k1": "epub_watch_folder", "v1": _epub_default,
+             "k2": "auto_scan_interval", "v2": "60"},
+        )
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

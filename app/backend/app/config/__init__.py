@@ -11,13 +11,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..core import paths as _paths
-
-_HIME_DATA_DIR = os.environ.get("HIME_DATA_DIR")
-
-if _HIME_DATA_DIR:
-    _ENV_FILE = Path(_HIME_DATA_DIR) / ".env"
-else:
-    _ENV_FILE = Path(__file__).parent.parent.parent / ".env"  # dev: app/backend/.env
+from ._env import ENV_FILE as _ENV_FILE
 
 
 class Settings(BaseSettings):

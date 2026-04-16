@@ -155,6 +155,7 @@ async def ws_translate_pipeline(
             run_pipeline(job_id, source_content, notes, ws_queue, book_id=book_id)
         )
         _active_pipelines[job_id] = task
+        task.add_done_callback(lambda _, jid=job_id: _active_pipelines.pop(jid, None))
     else:
         # Pipeline already running — reconnect path.
         async with AsyncSessionLocal() as session:

@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import { readFileSync } from 'node:fs'
@@ -32,7 +33,7 @@ const BACKEND_ORIGIN = `http://127.0.0.1:${BACKEND_PORT}`
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   server: {
     port: 1420,
     host: '127.0.0.1',

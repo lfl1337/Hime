@@ -8,16 +8,19 @@ on:
   schedule:
     - cron: "0 3 * * 1"  # jeden Montag 3 Uhr UTC
 
+permissions:
+  contents: read
+
 jobs:
   bandit:
     name: Bandit — Python SAST
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -58,7 +61,7 @@ jobs:
           fi
 
       - name: Upload Bandit results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bandit-results
@@ -72,7 +75,7 @@ jobs:
       image: semgrep/semgrep
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Run Semgrep
         run: |
@@ -115,7 +118,7 @@ jobs:
           fi
 
       - name: Upload Semgrep results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: semgrep-results

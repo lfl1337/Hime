@@ -18,6 +18,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from ..config import settings
+from ..core.paths import validate_safe_name
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +272,7 @@ def parse_eta_from_log(run: str) -> EtaInfo | None:
 # ---------------------------------------------------------------------------
 
 def get_training_status(run_name: str) -> TrainingStatus:
+    validate_safe_name(run_name)
     state = _latest_trainer_state(run_name)
     log_file = _find_log_for_run(run_name)
     status = _derive_status(state, run_name)
@@ -375,6 +377,7 @@ def get_training_status(run_name: str) -> TrainingStatus:
 
 
 def get_checkpoints(run_name: str) -> list[CheckpointInfo]:
+    validate_safe_name(run_name)
     cp_dir = _checkpoint_dir(run_name)
     if not cp_dir.is_dir():
         return []
@@ -483,6 +486,7 @@ def get_checkpoints(run_name: str) -> list[CheckpointInfo]:
 
 def get_loss_history(run_name: str) -> list[LossPoint]:
     """Read log_history from the latest checkpoint's trainer_state.json."""
+    validate_safe_name(run_name)
     state = _latest_trainer_state(run_name)
     if state is None:
         return []
@@ -512,6 +516,7 @@ def get_loss_history(run_name: str) -> list[LossPoint]:
 
 def get_log_tail(run_name: str, n: int = 20) -> list[str]:
     """Return the last n lines of the training log file for the given run."""
+    validate_safe_name(run_name)
     log_file = _find_log_for_run(run_name)
     if log_file is None or not log_file.is_file():
         return []
@@ -677,6 +682,7 @@ def _write_hw_snapshot_to_log(run_name: str) -> None:
 
 async def stream_events(run_name: str):
     """Async generator — emits 'loss_history_batch' on connect, then 'status' events every 30 seconds."""
+    validate_safe_name(run_name)
     # Send full loss history on initial connect so frontend can skip separate HTTP call
     try:
         history = get_loss_history(run_name)

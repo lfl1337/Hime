@@ -6,21 +6,11 @@ raw os.environ.get() at import-time was ignoring .env values).
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..core.paths import MODELS_DIR
-
-# --- Locate .env (mirrors config/__init__.py logic) ---
-_HIME_DATA_DIR = os.environ.get("HIME_DATA_DIR")
-_ENV_FILE = (
-    Path(_HIME_DATA_DIR) / ".env"
-    if _HIME_DATA_DIR
-    else Path(__file__).parent.parent.parent / ".env"
-)
+from ._env import ENV_FILE as _ENV_FILE
 
 
 class _PipelineV2Settings(BaseSettings):

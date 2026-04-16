@@ -16,7 +16,7 @@ async def retrieve_top_k(
     top_k: int = 5,
 ) -> list[dict]:
     """Return top_k similar chunks from the given series, or [] if no store exists."""
-    db_path = RAG_DIR / f"series_{series_id}.db"
+    db_path = RAG_DIR / f"series_{series_id}.db"  # series_id is int — no path traversal possible
     if not db_path.exists():
         return []
     embeddings = embed_texts([query_text])

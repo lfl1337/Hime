@@ -36,7 +36,7 @@ elif getattr(sys, "frozen", False):
     # Fall back to the same AppData path Tauri would pass so hime-backend.lock
     # ends up somewhere the frontend can find it, not in the temp extract dir.
     _appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    _DATA_DIR = _appdata / "dev.hime.app"
+    _DATA_DIR = _appdata / "dev.Ninym.hime"
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     os.environ["HIME_DATA_DIR"] = str(_DATA_DIR)
 else:

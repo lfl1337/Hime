@@ -11,7 +11,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..core import paths as _paths
-from ._env import ENV_FILE as _ENV_FILE
+from ._env import ENV_FILE as _ENV_FILE, _HIME_DATA_DIR
 
 
 class Settings(BaseSettings):

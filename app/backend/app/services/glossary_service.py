@@ -116,6 +116,16 @@ class GlossaryService:
             occurrences=orm.occurrences, is_locked=orm.is_locked,
         )
 
+    async def get_term(self, term_id: int) -> GlossaryTerm | None:
+        orm = await self.session.get(GlossaryTermORM, term_id)
+        if orm is None:
+            return None
+        return GlossaryTerm(
+            id=orm.id, glossary_id=orm.glossary_id, source_term=orm.source_term,
+            target_term=orm.target_term, category=orm.category, notes=orm.notes,
+            occurrences=orm.occurrences, is_locked=orm.is_locked,
+        )
+
     async def delete_term(self, term_id: int) -> bool:
         orm = await self.session.get(GlossaryTermORM, term_id)
         if orm is None:

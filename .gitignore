@@ -89,6 +89,8 @@ desktop.ini
 prompts/
 reports/
 docs/superpowers/
+REVIEW_REPORT.md
+AUDIT_REPORT.md
 V121_HANDOFF.md
 
 # ─── Hime Vault RAG content (auto-generated on first run, rebuilt from EPUBs) ─
@@ -99,6 +101,8 @@ Hime-vault/_index.md
 # ─── Test / lint caches ──────────────────────────────────────────────────────
 .coverage
 htmlcov/
+coverage/
+app/frontend/coverage/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

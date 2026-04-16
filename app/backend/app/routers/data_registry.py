@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..core.paths import DATA_DIR, PROJECT_ROOT
+from ..core.paths import DATA_DIR, PROJECT_ROOT, validate_within_directory
 
 router = APIRouter(prefix="/data/registry", tags=["data-registry"])
 
@@ -60,6 +60,10 @@ async def get_registry_entry(entry_id: str) -> RegistryEntryDetail:
     for entry in _load_entries():
         if entry["id"] == entry_id:
             src = PROJECT_ROOT / entry["path"]
+            try:
+                validate_within_directory(src, PROJECT_ROOT)
+            except ValueError:
+                raise HTTPException(status_code=422, detail="registry path escapes project root")
             samples: list[dict] = []
             if src.exists():
                 with src.open("r", encoding="utf-8") as f:

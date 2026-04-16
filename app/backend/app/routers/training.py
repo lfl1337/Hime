@@ -33,7 +33,7 @@ from ..services.training_runner import (
 router = APIRouter(prefix="/training", tags=["training"])
 
 
-_RUN_PATTERN = r"^[\w\-\.]+$"
+_RUN_PATTERN = r"^[\w][\w\-\.]*$"
 
 
 class LogResponse(BaseModel):

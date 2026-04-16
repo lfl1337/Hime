@@ -67,3 +67,15 @@ def test_validate_within_directory_rejects_root_itself(tmp_path):
     root.mkdir()
     with pytest.raises(ValueError, match="outside"):
         validate_within_directory(root, root)
+
+
+def test_run_pattern_rejects_double_dots():
+    """The router regex must reject '..' and '.' — must start with a word char."""
+    import re
+    _RUN_PATTERN = r"^[\w][\w\-\.]*$"
+    assert re.match(_RUN_PATTERN, "Qwen2.5-32B")
+    assert re.match(_RUN_PATTERN, "my_model")
+    assert not re.match(_RUN_PATTERN, "..")
+    assert not re.match(_RUN_PATTERN, ".")
+    assert not re.match(_RUN_PATTERN, "...")
+    assert re.match(_RUN_PATTERN, "model.v2")  # dots embedded OK

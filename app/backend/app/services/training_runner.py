@@ -14,6 +14,7 @@ import psutil
 from pydantic import BaseModel
 
 from ..config import settings
+from ..core.paths import validate_safe_name
 
 _log = logging.getLogger(__name__)
 
@@ -154,6 +155,7 @@ def start_training(
             _log.info("Correcting model_name %r → %r for model_key %r", model_name, canonical, model_key)
             model_name = canonical
 
+    validate_safe_name(model_name)
     _log.info("Starting training for %s (epochs=%d, model_key=%s)", model_name, epochs, model_key)
     _ensure_log_dir()
     pid_path = _pid_file(model_name)
@@ -301,6 +303,7 @@ def _kill_survivors(all_pids: list[int], model_name: str) -> None:
 
 
 def stop_training(model_name: str) -> dict:
+    validate_safe_name(model_name)
     _ensure_log_dir()
     pid_path = _pid_file(model_name)
     if not pid_path.exists():
@@ -443,6 +446,7 @@ def get_running_processes() -> list[TrainingProcess]:
 
 
 def get_available_checkpoints(model_name: str) -> list[str]:
+    validate_safe_name(model_name)
     cp_dir = _checkpoint_dir(model_name)
     if not cp_dir.exists():
         return []

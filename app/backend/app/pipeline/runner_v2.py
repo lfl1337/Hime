@@ -310,14 +310,18 @@ async def run_pipeline_v2(
                 source_sentences = source_sentences[: len(sentences)]
 
                 reader.load(settings)
-                annotations = await reader.review(
-                    sentences=sentences, source_sentences=source_sentences,
-                )
-                reader.unload()
+                try:
+                    annotations = await reader.review(
+                        sentences=sentences, source_sentences=source_sentences,
+                    )
+                finally:
+                    reader.unload()
 
                 aggregator.load(settings)
-                segment_verdict = await aggregator.aggregate_segment(annotations)
-                aggregator.unload()
+                try:
+                    segment_verdict = await aggregator.aggregate_segment(annotations)
+                finally:
+                    aggregator.unload()
 
                 last_verdict = segment_verdict.verdict
                 last_instruction = segment_verdict.instruction

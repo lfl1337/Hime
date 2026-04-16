@@ -1,5 +1,6 @@
 """Training monitor endpoints."""
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -33,7 +34,7 @@ from ..services.training_runner import (
 router = APIRouter(prefix="/training", tags=["training"])
 
 
-_RUN_PATTERN = r"^[\w\-\.]+$"
+_RUN_PATTERN = r"^[\w][\w\-\.]*$"
 
 
 class LogResponse(BaseModel):
@@ -214,6 +215,9 @@ class TrainingConfigUpdate(BaseModel):
     def _no_dangerous_chars(cls, v: str) -> str:
         if "\x00" in v or "\n" in v or "\r" in v:
             raise ValueError("Invalid characters in value")
+        # Reject env-var interpolation syntax that downstream consumers could expand
+        if "${" in v or re.search(r"%[A-Za-z_]\w*%", v):
+            raise ValueError("Value contains environment variable syntax")
         return v
 
 

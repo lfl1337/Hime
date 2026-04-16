@@ -1,12 +1,13 @@
 """POST /api/v1/verify — bilingual fidelity verification with paragraph-level caching."""
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
+from ..middleware.rate_limit import limiter
 from ..models import Paragraph
 from ..services.verification_service import VerificationResult, VerificationService
 
@@ -23,7 +24,9 @@ class VerifyRequest(BaseModel):
 
 
 @router.post("", response_model=VerificationResult)
+@limiter.limit("10/minute")
 async def verify(
+    request: Request,
     body: VerifyRequest,
     session: AsyncSession = Depends(get_session),
 ) -> VerificationResult:

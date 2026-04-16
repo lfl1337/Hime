@@ -1,6 +1,14 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Class-based dark mode (replaces darkMode: 'class' in old tailwind.config.js) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Theme — replaces tailwind.config.js theme.extend */
+@theme {
+  --color-accent: #7C6FCD;
+  --font-sans: 'system-ui', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif;
+  --font-mono: 'ui-monospace', 'SFMono-Regular', 'Consolas', monospace;
+}
 
 @layer base {
   body {
@@ -8,10 +16,8 @@
   }
 }
 
-@layer utilities {
-  .jp-text {
-    font-family: 'system-ui', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif;
-  }
+@utility jp-text {
+  font-family: 'system-ui', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif;
 }
 
 /* Light mode — overrides when .dark is not present on <html> */

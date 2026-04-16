@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bs4 import XMLParsedAsHTMLWarning
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Book, Chapter, Paragraph, Setting
@@ -399,21 +399,23 @@ async def save_translation(paragraph_id: int, text: str, session: AsyncSession) 
     # Update chapter + book counters
     chapter = await session.get(Chapter, paragraph.chapter_id)
     if chapter:
-        result = await session.execute(
-            select(Paragraph).where(Paragraph.chapter_id == chapter.id, Paragraph.is_translated == True)  # noqa: E712
+        count_result = await session.execute(
+            select(func.count(Paragraph.id)).where(
+                Paragraph.chapter_id == chapter.id, Paragraph.is_translated == True  # noqa: E712
+            )
         )
-        chapter.translated_paragraphs = len(result.scalars().all())
+        chapter.translated_paragraphs = count_result.scalar_one()
         chapter.status = "complete" if chapter.translated_paragraphs >= chapter.total_paragraphs else "in_progress"
         await session.flush()
 
         book = await session.get(Book, chapter.book_id)
         if book:
-            result2 = await session.execute(
-                select(Paragraph)
+            count_result2 = await session.execute(
+                select(func.count(Paragraph.id))
                 .join(Chapter, Paragraph.chapter_id == Chapter.id)
                 .where(Chapter.book_id == book.id, Paragraph.is_translated == True)  # noqa: E712
             )
-            book.translated_paragraphs = len(result2.scalars().all())
+            book.translated_paragraphs = count_result2.scalar_one()
             book.status = "complete" if book.translated_paragraphs >= book.total_paragraphs else "in_progress"
 
     await session.commit()

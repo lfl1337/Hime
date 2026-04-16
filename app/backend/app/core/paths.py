@@ -46,3 +46,39 @@ def checkpoints_dir(model_name: str) -> Path:
 def lora_dir(model_name: str) -> Path:
     """Return the LoRA adapter directory for a specific model."""
     return MODELS_DIR / "lora" / model_name
+
+
+import re as _re
+
+_SAFE_NAME_RE = _re.compile(r"^[\w\-\.]+$")
+_DOTS_ONLY_RE = _re.compile(r"^\.+$")
+
+
+def validate_safe_name(name: str) -> str:
+    """Validate a user-supplied name (model, run, checkpoint) for filesystem use.
+
+    Accepts: word chars, hyphens, dots (e.g. 'Qwen2.5-32B-Instruct').
+    Rejects: empty, null bytes, path separators, dots-only ('..', '.').
+    Returns the name unchanged if valid, raises ValueError otherwise.
+    """
+    if (
+        not name
+        or "\x00" in name
+        or _DOTS_ONLY_RE.match(name)
+        or not _SAFE_NAME_RE.match(name)
+    ):
+        raise ValueError(f"unsafe name: {name!r}")
+    return name
+
+
+def validate_within_directory(path: Path, root: Path) -> Path:
+    """Ensure *path* resolves to a strict child of *root*.
+
+    Returns the resolved path. Raises ValueError if the resolved path
+    equals or escapes *root*.
+    """
+    resolved = path.resolve()
+    root_resolved = root.resolve()
+    if not str(resolved).startswith(str(root_resolved) + os.sep):
+        raise ValueError(f"path {resolved} is outside {root_resolved}")
+    return resolved

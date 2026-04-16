@@ -57,7 +57,7 @@ class SeriesStats(BaseModel):
 
 @router.get("/series/{series_id}/stats", response_model=SeriesStats)
 async def stats(series_id: int) -> SeriesStats:
-    db_path = RAG_DIR / f"series_{series_id}.db"
+    db_path = RAG_DIR / f"series_{series_id}.db"  # series_id is int — no path traversal possible
     if not db_path.exists():
         return SeriesStats(series_id=series_id, chunk_count=0, last_update=None)
     store = SeriesStore(db_path)
@@ -70,7 +70,7 @@ async def stats(series_id: int) -> SeriesStats:
 
 @router.delete("/series/{series_id}")
 async def delete_series_index(series_id: int) -> dict:
-    db_path = RAG_DIR / f"series_{series_id}.db"
+    db_path = RAG_DIR / f"series_{series_id}.db"  # series_id is int — no path traversal possible
     if not db_path.exists():
         return {"deleted": False, "reason": "not found"}
     store = SeriesStore(db_path)
